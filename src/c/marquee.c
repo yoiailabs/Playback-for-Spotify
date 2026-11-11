@@ -95,8 +95,11 @@ void marquee_set(Marquee *m, const char *text, GFont font, int visible_w,
     return;
   }
 
-  strncpy(m->text, new_text, sizeof(m->text) - 1);
-  m->text[sizeof(m->text) - 1] = '\0';
+  // Font changes can reuse the stored text; avoid an overlapping copy.
+  if (new_text != m->text) {
+    strncpy(m->text, new_text, sizeof(m->text) - 1);
+    m->text[sizeof(m->text) - 1] = '\0';
+  }
   m->text_len = strlen(m->text);
   m->font       = font;
   m->visible_w  = visible_w;
@@ -193,11 +196,8 @@ Layer *marquee_layer_get_layer(MarqueeLayer *m) {
 
 void marquee_layer_set_font(MarqueeLayer *m, GFont font) {
   if (!m) return;
-  m->m.font = font;
-  // If text was already set, recompute widths with the new font.
-  if (m->m.text_len > 0) {
-    marquee_set(&m->m, m->m.text, font, m->m.visible_w, ml_redraw_cb, m);
-  }
+  // Let marquee_set compare the old font before updating and re-measuring.
+  marquee_set(&m->m, m->m.text, font, m->m.visible_w, ml_redraw_cb, m);
   if (m->layer) layer_mark_dirty(m->layer);
 }
 

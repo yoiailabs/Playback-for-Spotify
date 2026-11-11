@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "comm.h"
 #include "marquee.h"
+#include "progress.h"
 
 static BitmapLayer *s_art_layer;
 static MarqueeLayer *s_title_layer;
@@ -19,7 +20,7 @@ static TextLayer *s_clock_shadow_layer;
 static char s_title_pending[64];    // incoming title (shown at animation midpoint)
 static char s_artist_buf[64];       // incoming artist (written by ui_set_track_info)
 static char s_artist_display_buf[64]; // artist shown on screen (pointer held by TextLayer)
-static char s_time_buf[24];
+static char s_time_buf[PROGRESS_TIME_BUFFER_SIZE];
 static char s_clock_buf[8];
 static int32_t s_elapsed_sec = 0;
 static int32_t s_total_sec = 0;
@@ -832,14 +833,9 @@ void ui_hint_animation_dir(bool reverse) {
 }
 
 void ui_set_progress(int elapsed_sec, int total_sec) {
-  s_elapsed_sec = (elapsed_sec < 0) ? 0 : elapsed_sec;
-  s_total_sec = total_sec;
-  if (s_total_sec > 0 && s_elapsed_sec > s_total_sec) s_elapsed_sec = s_total_sec;
-
-  int e_min = elapsed_sec / 60, e_sec = elapsed_sec % 60;
-  int t_min = total_sec / 60, t_sec = total_sec % 60;
-  snprintf(s_time_buf, sizeof(s_time_buf), "%d:%02d / %d:%02d",
-           e_min, e_sec, t_min, t_sec);
+  ProgressTime time = progress_format_time(elapsed_sec, total_sec, s_time_buf);
+  s_elapsed_sec = time.elapsed_sec;
+  s_total_sec = time.total_sec;
 
   if (!s_progress_layer) return;
   layer_mark_dirty(s_progress_layer);
