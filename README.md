@@ -111,4 +111,4 @@ are unchanged. CI runs separate JavaScript, C analysis/test, and watch-build job
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
