@@ -7,12 +7,16 @@ function isValid(value) {
     (value.longPressMode === 'seek' || value.longPressMode === 'volume');
 }
 
-function load() {
+function loadSaved() {
   try {
     var value = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (isValid(value)) return { longPressMode: value.longPressMode };
   } catch (e) {}
-  return { longPressMode: 'seek' };
+  return null;
+}
+
+function load() {
+  return loadSaved() || { longPressMode: 'seek' };
 }
 
 function save(value) {
@@ -21,8 +25,15 @@ function save(value) {
   return true;
 }
 
+// Adopt the watch's persisted choice once; an explicit phone choice wins.
+function adoptWatch(value) {
+  if (loadSaved() || (value !== 0 && value !== 1)) return false;
+  return save({ longPressMode: value === 1 ? 'volume' : 'seek' });
+}
+
 function message() {
-  return { 'LongPressMode': load().longPressMode === 'volume' ? 1 : 0 };
+  var saved = loadSaved();
+  return saved ? { 'LongPressMode': saved.longPressMode === 'volume' ? 1 : 0 } : {};
 }
 
 function send(extra, ack, nack, transport) {
@@ -46,4 +57,4 @@ function configUrl(clientId, authed) {
   return CONFIG_URL + '?' + query;
 }
 
-module.exports = { load: load, save: save, message: message, send: send, configUrl: configUrl };
+module.exports = { load: load, loadSaved: loadSaved, adoptWatch: adoptWatch, save: save, message: message, send: send, configUrl: configUrl };

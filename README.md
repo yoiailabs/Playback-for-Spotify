@@ -112,8 +112,9 @@ npm run web:check   # Validate and package without Cloudflare credentials
 npm run web:deploy  # Deploy to ongaku.yoiailabs.com
 ```
 
-Deployment requires `wrangler login` with access to the account in
-`web/wrangler.jsonc`. CI only runs the dry run; deployment is manual.
+Deployment requires `wrangler login` with access to the intended account.
+Set `CLOUDFLARE_ACCOUNT_ID` to select the account, or pick it when logging in.
+CI only runs the dry run; deployment is manual.
 
 ## Testing on Emulator
 

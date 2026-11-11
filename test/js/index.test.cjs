@@ -18,7 +18,7 @@ function setup(api = {}, platform = 'basalt') {
 test('ready sends JsReady and unauthenticated status without starting timers', () => {
   const { h } = setup();
   h.listeners.ready();
-  assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: 0, JsReady: 1, AuthStatus: 0 }]);
+  assert.deepEqual(h.messages.map(m => plain(m.body)), [{ JsReady: 1, AuthStatus: 0 }]);
   assert.equal(h.timers.size, 0);
 });
 test('now-playing builds track message using seconds and artist names', () => {
@@ -383,8 +383,8 @@ for (const activeArt of ['other', 'same']) {
   });
 }
 
-function setupSettings(initial = {}) {
-  const h = harness({ initial });
+function setupSettings(initial = {}, platform = 'basalt') {
+  const h = harness({ initial, platform });
   const auth = h.load('src/pkjs/spotify_auth.js').module.exports;
   const image = { isBusy: () => false };
   const context = h.load('src/pkjs/index.js', {
@@ -399,11 +399,11 @@ test('startup resends stored settings in one message with readiness and auth', (
   assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: 1, JsReady: 1, AuthStatus: 0 }]);
   assert.equal(h.timers.size, 0);
 });
-test('invalid stored settings fall back to seek on startup', () => {
+test('invalid stored settings do not overwrite the watch on startup', () => {
   for (const value of ['{', 'null', '{}', '{"longPressMode":"invalid"}']) {
     const { h } = setupSettings({ ongaku_settings: value });
     h.listeners.ready();
-    assert.equal(h.messages[0].body.LongPressMode, 0);
+    assert.equal(h.messages[0].body.LongPressMode, undefined);
   }
 });
 test('login with settings coalesces auth and settings into one message', () => {
@@ -443,6 +443,8 @@ for (const slot of ['current', 'prefetch', 'promotion']) {
       ackImages(h);
       image.promotePrefetch();
     }
+    const settings = h.load('src/pkjs/settings.js').module.exports;
+    settings.save({ longPressMode: 'seek' });
     context.sendSettings({});
     context.flushSettings();
     assert.equal(h.messages.some(m => m.body.LongPressMode !== undefined), false);
@@ -465,4 +467,103 @@ test('an image download completing during settings delivery waits for the contro
   assert.ok(h.messages.at(-1).body.ImageWidth);
   ackImages(h);
   assert.equal(image.isBusy(), false);
+});
+
+test('an uninitialized phone adopts the watch Volume choice without sending seek', () => {
+  const { h } = setupSettings();
+  h.listeners.ready();
+  assert.equal(h.messages[0].body.LongPressMode, undefined);
+  // A real watch may piggyback this report on its first playback command.
+  h.listeners.appmessage({ payload: { LongPressMode: 1, Command: 1 } });
+  assert.deepEqual(JSON.parse(h.localStorage.getItem('ongaku_settings')), { longPressMode: 'volume' });
+  h.listeners.showConfiguration();
+  assert.equal(new URL(h.Pebble.openedURL).searchParams.get('long_press'), 'volume');
+  assert.equal(h.messages.some(m => m.body.LongPressMode === 0), false);
+  assert.equal(h.messages.length, 1, 'adoption sends no reply loop');
+});
+for (const [mode, report] of [['seek', 1], ['volume', 0]]) {
+  test(`explicit phone ${mode} wins over a different watch report`, () => {
+    const { h } = setupSettings({ ongaku_settings: JSON.stringify({ longPressMode: mode }) });
+    h.listeners.ready();
+    h.listeners.appmessage({ payload: { 160: report } });
+    assert.equal(h.messages[0].body.LongPressMode, mode === 'volume' ? 1 : 0);
+    assert.equal(JSON.parse(h.localStorage.getItem('ongaku_settings')).longPressMode, mode);
+    h.listeners.showConfiguration();
+    assert.equal(new URL(h.Pebble.openedURL).searchParams.get('long_press'), mode);
+  });
+}
+test('watch reports require integer 0 or 1; numeric message key and zero work', () => {
+  const { h } = setupSettings();
+  for (const value of [null, -1, 2, '1', {}, true]) {
+    h.listeners.appmessage({ payload: { LongPressMode: value } });
+    assert.equal(h.localStorage.getItem('ongaku_settings'), null);
+  }
+  h.listeners.appmessage({ payload: { 160: 0 } });
+  assert.deepEqual(JSON.parse(h.localStorage.getItem('ongaku_settings')), { longPressMode: 'seek' });
+  assert.equal(h.messages.length, 0);
+});
+test('aplite without a phone setting sends no mode and opens the aplite config context', () => {
+  const { h } = setupSettings({}, 'aplite');
+  h.listeners.ready();
+  assert.deepEqual(plain(h.messages[0].body), { JsReady: 1, AuthStatus: 0 });
+  assert.equal(h.localStorage.getItem('ongaku_settings'), null);
+  h.listeners.showConfiguration();
+  const query = new URL(h.Pebble.openedURL).searchParams;
+  assert.equal(query.get('platform'), 'aplite');
+  assert.equal(query.get('long_press'), 'seek');
+});
+test('promotion blocked by a settings send is retried on the next poll without consuming attempts', () => {
+  const { h, image, playback, context } = setupArt('emery');
+  const url = playback.item.album.images[0].url;
+  image.sendPrefetchFromUrl(url, playback.item.uri);
+  h.requests[0].respond(200);
+  ackImages(h);
+  h.messages.length = 0;
+  image.sendControlMessage({ LongPressMode: 1 });
+  const control = h.messages[0];
+  context.fetchNowPlaying();
+  assert.equal(context.lastImageUrl, null);
+  assert.equal(context.imageAttempts, 0);
+  assert.equal(h.messages.some(m => m.body.ImagePromote), false);
+  control.ack();
+  context.fetchNowPlaying();
+  const promotion = h.messages.find(m => m.body.ImagePromote);
+  assert.ok(promotion);
+  assert.equal(context.imageAttempts, 1);
+  promotion.ack();
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 1, 'promotion did not redownload art');
+  assert.equal(h.messages.filter(m => m.body.ImagePromote).length, 1);
+});
+test('NACKed settings retry twice with backoff, coalesce updates and wait for busy transfers', () => {
+  const { h, image, save } = setupSettings();
+  save({ settings: { longPressMode: 'volume' } });
+  assert.equal(h.runTimer(), 0);
+  h.messages[0].nack();
+  save({ settings: { longPressMode: 'seek' } });
+  image.isBusy = () => true;
+  assert.equal(h.runTimer(), 1000);
+  assert.equal(h.messages.length, 1);
+  image.isBusy = () => false;
+  assert.equal(h.runTimer(), 250);
+  assert.equal(h.messages[1].body.LongPressMode, 0);
+  h.messages[1].nack();
+  assert.equal(h.runTimer(), 1000);
+  h.messages[2].nack();
+  assert.equal(h.runTimer(), 3000);
+  h.messages[3].nack();
+  assert.equal(h.timers.size, 0, 'the latest setting gets at most two retries');
+  assert.equal(h.messages.length, 4, 'old value once, latest value three times');
+});
+test('startup settings send retries at most twice, and ACK stops retries', () => {
+  const { h } = setupSettings({ ongaku_settings: JSON.stringify({ longPressMode: 'volume' }) });
+  h.listeners.ready();
+  h.messages[0].nack();
+  assert.equal(h.runTimer(), 1000);
+  h.messages[1].nack();
+  assert.equal(h.runTimer(), 3000);
+  assert.deepEqual(plain(h.messages[2].body), { LongPressMode: 1, JsReady: 1, AuthStatus: 0 });
+  h.messages[2].ack();
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.messages.length, 3);
 });

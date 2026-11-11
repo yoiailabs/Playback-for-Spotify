@@ -178,3 +178,40 @@ test('Spotify denial clears the login session without exchanging a code', async 
   assert.equal(p.element('status').textContent, 'access_denied');
   assert.equal(p.sessionStorage.getItem('pkce_verifier'), null);
 });
+
+test('settings query survives setup and OAuth navigation and is replaced by a fresh phone query', () => {
+  const session = storage();
+  const history = { calls: [], replaceState(...args) { this.calls.push(args); } };
+  const query = '?client_id=client&long_press=volume&platform=aplite&authed=1';
+  assert.equal(core.restoreSettingsQuery(query, session, history), query);
+  assert.equal(history.calls.length, 0);
+  // OAuth cleanup removes only PKCE data, retaining phone configuration context.
+  core.clearSession(session);
+  const restored = core.restoreSettingsQuery('', session, history);
+  assert.equal(restored, query);
+  assert.deepEqual(history.calls[0], [null, '', '/' + query]);
+  assert.deepEqual(core.parseSettings(restored), {
+    clientId: 'client', settings: { longPressMode: 'volume' }, platform: 'aplite', showLongPress: false, authed: true
+  });
+  const newer = '?long_press=seek&platform=basalt&authed=0';
+  core.restoreSettingsQuery(newer, session, history);
+  assert.equal(core.restoreSettingsQuery('', session, history), newer);
+});
+test('returning to settings without a query restores client, mode, aplite visibility and auth status', () => {
+  const query = '?client_id=client&long_press=volume&platform=aplite&authed=1';
+  const p = page('settings-page.js', '', { settings_query: query });
+  assert.deepEqual(p.events[0], ['replaceState', null, '', '/' + query]);
+  assert.equal(p.element('client-id').value, 'client');
+  assert.equal(p.element('long-press').value, 'volume');
+  assert.equal(p.element('long-press-settings').hidden, true);
+  assert.match(p.element('status').textContent, /connected/);
+  p.element('save').onclick();
+  assert.equal(decodeClose(p.window.location.href).settings.longPressMode, 'volume');
+});
+test('settings query restoration defaults safely without storage or saved context', () => {
+  const history = { replaceState() { assert.fail('no saved context should not rewrite URL'); } };
+  assert.equal(core.restoreSettingsQuery('', storage(), history), '');
+  const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+  assert.equal(core.restoreSettingsQuery('', blocked, history), '');
+  assert.equal(core.restoreSettingsQuery('?long_press=volume', blocked, history), '?long_press=volume');
+});

@@ -1,7 +1,8 @@
 (function() {
   'use strict';
   var core = ConfigCore;
-  var initial = core.parseSettings(window.location.search);
+  var search = core.restoreSettingsQuery(window.location.search, sessionStorage, window.history);
+  var initial = core.parseSettings(search);
   var clientId = document.getElementById('client-id');
   var mode = document.getElementById('long-press');
   var status = document.getElementById('status');

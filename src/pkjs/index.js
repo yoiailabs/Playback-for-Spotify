@@ -57,28 +57,57 @@ function sendError(msg) {
   } catch (e) { /* best effort */ }
 }
 
-// Coalesce configuration changes and wait for image chunks/list ACK chains.
-// A failed send is recovered by the single startup resend on the next launch.
+// Coalesce updates and retry a failed settings send twice (1 s, then 3 s).
+// The latest saved value is read for each attempt, after busy transfers finish.
 var settingsTimer = null;
 var pendingSettings = null;
-function sendSettings(extra) {
-  if (!pendingSettings) pendingSettings = {};
+var settingsInFlight = false;
+var settingsRevision = 0;
+var settingsRetries = 0;
+
+function mergeSettingsExtra(target, extra) {
   for (var key in extra) {
-    if (Object.prototype.hasOwnProperty.call(extra, key)) pendingSettings[key] = extra[key];
+    if (Object.prototype.hasOwnProperty.call(extra, key)) target[key] = extra[key];
   }
-  if (settingsTimer !== null) return;
-  settingsTimer = setTimeout(flushSettings, 0);
+  return target;
+}
+
+function scheduleSettings(delay) {
+  if (settingsTimer === null) settingsTimer = setTimeout(flushSettings, delay);
+}
+
+function sendSettings(extra, immediately) {
+  pendingSettings = mergeSettingsExtra(pendingSettings || {}, extra);
+  settingsRevision++;
+  settingsRetries = 0;
+  if (immediately && settingsTimer === null) flushSettings();
+  else scheduleSettings(0);
 }
 
 function flushSettings() {
   settingsTimer = null;
-  if (listSendInProgress || imageTransfer.isBusy()) {
-    settingsTimer = setTimeout(flushSettings, 250);
+  if (!pendingSettings) return;
+  if (settingsInFlight || listSendInProgress || imageTransfer.isBusy()) {
+    scheduleSettings(250);
     return;
   }
   var extra = pendingSettings;
+  var revision = settingsRevision;
   pendingSettings = null;
-  settings.send(extra, null, null, imageTransfer.sendControlMessage);
+  settingsInFlight = true;
+  settings.send(extra, function() {
+    settingsInFlight = false;
+    if (pendingSettings) scheduleSettings(0);
+  }, function() {
+    settingsInFlight = false;
+    if (revision === settingsRevision && settingsRetries >= 2) return;
+    if (revision === settingsRevision) settingsRetries++;
+    // Retain readiness/auth fields, but let a newer update override them.
+    pendingSettings = mergeSettingsExtra(extra, pendingSettings);
+    if (settingsTimer !== null) clearTimeout(settingsTimer);
+    settingsTimer = null;
+    scheduleSettings(settingsRetries === 2 ? 3000 : 1000);
+  }, imageTransfer.sendControlMessage);
 }
 
 // --- Now Playing ---
@@ -131,9 +160,10 @@ function fetchNowPlaying() {
         // Fast path: if a prefetched art matches the new track, swap it in
         // with a single ImagePromote message instead of a full transfer.
         if (track.uri && track.uri === imageTransfer.getPrefetchedUri()) {
-          lastImageUrl = imageUrl;
-          imageAttempts++;
-          imageTransfer.promotePrefetch();
+          if (imageTransfer.promotePrefetch()) {
+            lastImageUrl = imageUrl;
+            imageAttempts++;
+          }
         } else {
           lastImageUrl = imageUrl;
           imageAttempts++;
@@ -581,8 +611,7 @@ auth.init(function(authed) {
 }, function() { sendSettings({}); });
 
 Pebble.addEventListener('ready', function() {
-  settings.send({ 'JsReady': 1, 'AuthStatus': auth.isAuthenticated() ? 1 : 0 },
-    null, null, imageTransfer.sendControlMessage);
+  sendSettings({ 'JsReady': 1, 'AuthStatus': auth.isAuthenticated() ? 1 : 0 }, true);
   if (auth.isAuthenticated()) {
     startPolling();
     setTimeout(fetchNowPlaying, 1000);
@@ -590,6 +619,9 @@ Pebble.addEventListener('ready', function() {
 });
 
 Pebble.addEventListener('appmessage', function(e) {
+  var mode = e.payload['LongPressMode'];
+  if (mode === undefined) mode = e.payload[160];
+  settings.adoptWatch(mode);
   var cmd = e.payload['Command'] || e.payload[100];
   var ctx = e.payload['CommandContext'] || e.payload[101];
   if (cmd !== undefined && cmd !== null) handleCommand(cmd, ctx);

@@ -11,6 +11,23 @@
     return { longPressMode: value && value.longPressMode === 'volume' ? 'volume' : 'seek' };
   }
 
+  // Keep phone context through setup/login navigation. OAuth query parameters
+  // are never passed here; only the settings page calls this helper.
+  function restoreSettingsQuery(search, storage, history) {
+    var key = 'settings_query';
+    try {
+      if (search && search !== '?') {
+        storage.setItem(key, search);
+      } else {
+        search = storage.getItem(key) || '';
+        if (search) history.replaceState(null, '', '/' + search);
+      }
+    } catch (error) {
+      // Settings remain usable when browser storage is unavailable.
+    }
+    return search || '';
+  }
+
   function parseSettings(search) {
     var params = new URLSearchParams(search);
     var platform = params.get('platform') || '';
@@ -73,7 +90,7 @@
   }
 
   return {
-    REDIRECT_URI: REDIRECT_URI, normalizeSettings: normalizeSettings, parseSettings: parseSettings,
+    REDIRECT_URI: REDIRECT_URI, restoreSettingsQuery: restoreSettingsQuery, normalizeSettings: normalizeSettings, parseSettings: parseSettings,
     generateVerifier: generateVerifier, generateState: generateState, challenge: challenge,
     authorizeUrl: authorizeUrl, validateSession: validateSession, closeUrl: closeUrl, clearSession: clearSession
   };
