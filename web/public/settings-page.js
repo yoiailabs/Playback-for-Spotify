@@ -8,12 +8,15 @@
   var status = document.getElementById('status');
   var login = document.getElementById('login');
   clientId.value = initial.clientId;
-  mode.value = initial.settings.longPressMode;
+  mode.value = initial.settings ? initial.settings.longPressMode : '';
   document.getElementById('long-press-settings').hidden = !initial.showLongPress;
   document.getElementById('aplite-note').hidden = initial.showLongPress;
   if (initial.authed) status.textContent = 'Spotify is connected. Save settings or log in again.';
 
-  function settings() { return core.normalizeSettings({ longPressMode: mode.value }); }
+  function settings() {
+    if (!initial.showLongPress) return initial.settings;
+    return core.normalizeSettings({ longPressMode: mode.value });
+  }
 
   document.getElementById('save').onclick = function() {
     window.location.href = core.closeUrl(settings(), { clientId: clientId.value.trim() });

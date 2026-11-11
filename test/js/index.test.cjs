@@ -510,7 +510,7 @@ test('aplite without a phone setting sends no mode and opens the aplite config c
   h.listeners.showConfiguration();
   const query = new URL(h.Pebble.openedURL).searchParams;
   assert.equal(query.get('platform'), 'aplite');
-  assert.equal(query.get('long_press'), 'seek');
+  assert.equal(query.has('long_press'), false);
 });
 test('promotion blocked by a settings send is retried on the next poll without consuming attempts', () => {
   const { h, image, playback, context } = setupArt('emery');

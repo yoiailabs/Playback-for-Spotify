@@ -8,7 +8,8 @@
   var SESSION_KEYS = ['pkce_verifier', 'pkce_state', 'pkce_client_id', 'pkce_settings'];
 
   function normalizeSettings(value) {
-    return { longPressMode: value && value.longPressMode === 'volume' ? 'volume' : 'seek' };
+    if (!value || (value.longPressMode !== 'seek' && value.longPressMode !== 'volume')) return null;
+    return { longPressMode: value.longPressMode };
   }
 
   // Keep phone context through setup/login navigation. OAuth query parameters
@@ -73,7 +74,9 @@
   }
 
   function closeUrl(settings, credentials) {
-    var payload = { settings: normalizeSettings(settings) };
+    var payload = {};
+    var normalized = normalizeSettings(settings);
+    if (normalized) payload.settings = normalized;
     if (credentials) {
       if (credentials.clientId) payload.clientId = credentials.clientId;
       if (credentials.token) {

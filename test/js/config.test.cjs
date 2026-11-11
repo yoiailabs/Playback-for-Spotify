@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const { webcrypto } = require('node:crypto');
 const core = require('../../web/public/config-core.js');
-const { storage, root, plain } = require('./helpers.cjs');
+const { harness, storage, root, plain } = require('./helpers.cjs');
 
 const redirect = 'https://ongaku.yoiailabs.com/oauth/callback';
 const decodeClose = url => JSON.parse(decodeURIComponent(url.split('#')[1]));
@@ -36,22 +36,22 @@ test('session validation rejects missing verifier, client ID and mismatched or m
     assert.throws(() => core.validateSession('expected', { ...session, [key]: null }));
   }
 });
-test('settings normalize defaults and invalid values, and aplite hides long press', () => {
+test('settings preserve unknown and invalid values as unknown, and aplite hides long press', () => {
   for (const value of [null, {}, { longPressMode: 1 }, { longPressMode: 'invalid' }]) {
-    assert.deepEqual(core.normalizeSettings(value), { longPressMode: 'seek' });
+    assert.equal(core.normalizeSettings(value), null);
   }
   assert.deepEqual(core.normalizeSettings({ longPressMode: 'volume' }), { longPressMode: 'volume' });
-  assert.deepEqual(core.parseSettings(''), { clientId: '', settings: { longPressMode: 'seek' }, platform: '', showLongPress: true, authed: false });
+  assert.deepEqual(core.parseSettings(''), { clientId: '', settings: null, platform: '', showLongPress: true, authed: false });
   assert.deepEqual(core.parseSettings('?client_id=%20test%2Bid%20&long_press=volume&platform=aplite&authed=1'), {
     clientId: 'test+id', settings: { longPressMode: 'volume' }, platform: 'aplite', showLongPress: false, authed: true
   });
-  assert.equal(core.parseSettings('?long_press=bogus&authed=yes').settings.longPressMode, 'seek');
+  assert.equal(core.parseSettings('?long_press=bogus&authed=yes').settings, null);
   assert.equal(core.parseSettings('?platform=basalt').showLongPress, true);
 });
 test('close URL contains settings only or settings and login credentials', () => {
   assert.deepEqual(decodeClose(core.closeUrl({ longPressMode: 'volume' })), { settings: { longPressMode: 'volume' } });
   const credentials = { clientId: 'client', token: 'test+token', refreshToken: 'refresh', expiresIn: 60 };
-  assert.deepEqual(decodeClose(core.closeUrl(null, credentials)), { ...credentials, settings: { longPressMode: 'seek' } });
+  assert.deepEqual(decodeClose(core.closeUrl(null, credentials)), credentials);
 });
 
 function page(file, search = '', initial = {}, fetchImpl) {
@@ -139,7 +139,7 @@ test('callback displays only Spotify error fields on failure', async () => {
 test('UMD module also loads as a browser global', () => {
   const context = vm.createContext({ self: {}, URLSearchParams });
   vm.runInContext(fs.readFileSync(path.join(root, 'web/public/config-core.js'), 'utf8'), context);
-  assert.deepEqual(plain(context.self.ConfigCore.normalizeSettings(null)), { longPressMode: 'seek' });
+  assert.equal(plain(context.self.ConfigCore.normalizeSettings(null)), null);
 });
 function files(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -214,4 +214,88 @@ test('settings query restoration defaults safely without storage or saved contex
   const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
   assert.equal(core.restoreSettingsQuery('', blocked, history), '');
   assert.equal(core.restoreSettingsQuery('?long_press=volume', blocked, history), '?long_press=volume');
+});
+
+function phone(platform) {
+  const h = harness({ platform });
+  const auth = h.load('src/pkjs/spotify_auth.js').module.exports;
+  h.load('src/pkjs/index.js', {
+    './spotify_auth': auth, './spotify_api': { getCurrentPlayback() {} },
+    './image_transfer': { isBusy: () => false }
+  });
+  h.listeners.showConfiguration();
+  return h;
+}
+function returnToPhone(h, url) {
+  h.listeners.webviewclosed({ response: url.split('#')[1] });
+  // Flush settings/auth sends without advancing the polling interval.
+  const timer = [...h.timers.entries()].find(([, timer]) => timer.delay === 0);
+  if (timer) {
+    h.clearTimeout(timer[0]);
+    timer[1].fn();
+  }
+}
+for (const platform of ['basalt', 'aplite']) {
+  test(`${platform}: unknown phone mode opens without a choice and Client-ID-only save sends no watch setting`, () => {
+    const h = phone(platform);
+    const search = new URL(h.Pebble.openedURL).search;
+    assert.equal(new URLSearchParams(search).has('long_press'), false);
+    const p = page('settings-page.js', search);
+    assert.equal(p.element('long-press').value, '');
+    assert.equal(p.element('long-press-settings').hidden, platform === 'aplite');
+    p.element('client-id').value = 'client';
+    p.element('save').onclick();
+    assert.deepEqual(decodeClose(p.window.location.href), { clientId: 'client' });
+    returnToPhone(h, p.window.location.href);
+    assert.equal(h.localStorage.getItem('ongaku_settings'), null);
+    assert.equal(h.messages.length, 0);
+  });
+  test(`${platform}: login without a mode preserves unknown through PKCE and sends no LongPressMode`, async () => {
+    const h = phone(platform);
+    const p = page('settings-page.js', new URL(h.Pebble.openedURL).search);
+    p.element('client-id').value = 'client';
+    await p.element('login').onclick();
+    assert.equal(p.sessionStorage.getItem('pkce_settings'), 'null');
+    const initial = Object.fromEntries(Object.keys(loginSession).map(key => [key, p.sessionStorage.getItem(key)]));
+    const callback = page('callback-page.js', '?code=code&state=' + initial.pkce_state, initial, async () => ({
+      ok: true, json: async () => ({ access_token: 'token', refresh_token: 'refresh', expires_in: 60 })
+    }));
+    await settle();
+    assert.deepEqual(decodeClose(callback.element('return').href), {
+      clientId: 'client', token: 'token', refreshToken: 'refresh', expiresIn: 60
+    });
+    returnToPhone(h, callback.element('return').href);
+    assert.equal(h.localStorage.getItem('ongaku_settings'), null);
+    assert.deepEqual(h.messages.map(m => plain(m.body)), [{ AuthStatus: 1 }]);
+  });
+}
+for (const [mode, wire] of [['seek', 0], ['volume', 1]]) {
+  test(`explicitly selecting ${mode} with no saved phone setting sends it to the watch`, () => {
+    const h = phone('basalt');
+    const p = page('settings-page.js', new URL(h.Pebble.openedURL).search);
+    p.element('long-press').value = mode;
+    p.element('save').onclick();
+    returnToPhone(h, p.window.location.href);
+    assert.deepEqual(JSON.parse(h.localStorage.getItem('ongaku_settings')), { longPressMode: mode });
+    assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: wire }]);
+  });
+}
+test('aplite cannot manufacture a setting from its hidden select, but preserves a known mode', () => {
+  const unknown = page('settings-page.js', '?platform=aplite');
+  unknown.element('long-press').value = 'seek';
+  unknown.element('save').onclick();
+  assert.deepEqual(decodeClose(unknown.window.location.href), {});
+  const known = page('settings-page.js', '?platform=aplite&long_press=volume');
+  known.element('long-press').value = 'seek';
+  known.element('save').onclick();
+  assert.deepEqual(decodeClose(known.window.location.href), { settings: { longPressMode: 'volume' } });
+});
+test('normalization and close URLs never infer seek from missing or invalid settings', () => {
+  for (const value of [undefined, null, {}, [], { longPressMode: '' }, { longPressMode: 'bad' }]) {
+    assert.equal(core.normalizeSettings(value), null);
+    assert.deepEqual(decodeClose(core.closeUrl(value, { clientId: 'client' })), { clientId: 'client' });
+  }
+  assert.deepEqual(core.normalizeSettings({ longPressMode: 'seek' }), { longPressMode: 'seek' });
+  const html = fs.readFileSync(path.join(root, 'web/public/index.html'), 'utf8');
+  assert.match(html, /<option value="" disabled selected>Keep watch setting<\/option>/);
 });

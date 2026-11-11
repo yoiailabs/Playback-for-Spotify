@@ -2,7 +2,7 @@
   // Reusing the name intentionally takes over the existing Worker and domain.
   "name": "ongaku",
   "compatibility_date": "2026-11-12",
-  "workers_dev": true,
+  "workers_dev": false,
   "assets": {
     "directory": "./public",
     "html_handling": "drop-trailing-slash",

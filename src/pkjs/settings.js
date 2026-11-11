@@ -50,9 +50,10 @@ function configUrl(clientId, authed) {
   try {
     if (Pebble.getActiveWatchInfo) platform = Pebble.getActiveWatchInfo().platform || '';
   } catch (e) {}
-  var query = 'long_press=' + load().longPressMode +
-    '&platform=' + encodeURIComponent(platform) + '&authed=' + (authed ? '1' : '0') +
+  var saved = loadSaved();
+  var query = 'platform=' + encodeURIComponent(platform) + '&authed=' + (authed ? '1' : '0') +
     '&t=' + Date.now();
+  if (saved) query += '&long_press=' + saved.longPressMode;
   if (clientId) query += '&client_id=' + encodeURIComponent(clientId);
   return CONFIG_URL + '?' + query;
 }

@@ -197,7 +197,7 @@ for (const watchInfo of [undefined, () => { throw new Error('unavailable'); }]) 
     assert.doesNotThrow(() => h.listeners.showConfiguration());
     const url = new URL(h.Pebble.openedURL);
     assert.equal(url.searchParams.get('platform'), '');
-    assert.equal(url.searchParams.get('long_press'), 'seek');
+    assert.equal(url.searchParams.has('long_press'), false);
     assert.equal(url.searchParams.get('authed'), '0');
     assert.equal(url.searchParams.has('client_id'), false);
   });
