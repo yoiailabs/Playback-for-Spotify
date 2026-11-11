@@ -2,7 +2,7 @@ var auth = require('./spotify_auth');
 
 var BASE_URL = 'https://api.spotify.com/v1';
 
-function apiRequest(method, path, body, callback) {
+function apiRequest(method, path, body, callback, refreshed) {
   if (typeof body === 'function') {
     callback = body;
     body = null;
@@ -15,13 +15,13 @@ function apiRequest(method, path, body, callback) {
   }
 
   // Auto-refresh if token is likely expired
-  if (auth.isTokenExpired()) {
+  if (!refreshed && auth.isTokenExpired()) {
     auth.refreshAccessToken(function(err, newToken) {
       if (err) {
         if (callback) callback(err, null);
         return;
       }
-      apiRequest(method, path, body, callback);
+      apiRequest(method, path, body, callback, true);
     });
     return;
   }
@@ -35,6 +35,10 @@ function apiRequest(method, path, body, callback) {
 
   xhr.onload = function() {
     if (xhr.status === 401) {
+      if (refreshed) {
+        if (callback) callback(new Error('Token expired'), null);
+        return;
+      }
       // Token rejected, attempt one refresh and retry
       auth.refreshAccessToken(function(err, newToken) {
         if (err) {
@@ -42,7 +46,7 @@ function apiRequest(method, path, body, callback) {
           if (callback) callback(new Error('Token expired'), null);
           return;
         }
-        apiRequest(method, path, body, callback);
+        apiRequest(method, path, body, callback, true);
       });
       return;
     }

@@ -125,14 +125,47 @@ test('failed 401 refresh reports Token expired and retains stored token', () => 
   assert.equal(error.message, 'Token expired');
   assert.equal(h.localStorage.getItem('spotify_token'), 'fake-access-token');
 });
-test('characterization: repeated 401 responses refresh repeatedly despite the one-retry comment', () => {
+test('repeated 401 responses refresh only once and report Token expired', () => {
   const { h, api } = setup();
-  let calls = 0;
-  api.play(() => { calls++; });
+  const results = [];
+  api.play((err, data) => { results.push([err.message, data]); });
   h.requests[0].respond(401);
   h.requests[1].respond(200, { access_token: 'fake-new-token', expires_in: 3600 });
   h.requests[2].respond(401);
-  assert.equal(h.requests.length, 4);
-  assert.equal(h.requests[3].url, 'https://accounts.spotify.com/api/token');
-  assert.equal(calls, 0);
+  assert.equal(h.requests.length, 3);
+  assert.deepEqual(results, [['Token expired', null]]);
+  assert.equal(h.localStorage.getItem('spotify_token'), 'fake-new-token');
+  assert.equal(h.localStorage.getItem('spotify_refresh_token'), 'fake-refresh-token');
+});
+
+test('preemptive expiry refresh consumes the single refresh allowed for a request', () => {
+  const { h, api } = setup({ spotify_token_expiry: '1' });
+  const results = [];
+  api.play((err, data) => { results.push([err.message, data]); });
+  h.requests[0].respond(200, { access_token: 'fake-new-token', expires_in: 3600 });
+  h.requests[1].respond(401);
+  assert.equal(h.requests.length, 2);
+  assert.deepEqual(results, [['Token expired', null]]);
+});
+
+test('retry does not refresh again even if the refreshed token is already expired', () => {
+  const { h, api } = setup({ spotify_token_expiry: '1' });
+  let calls = 0;
+  api.play((err, data) => { assert.equal(err, null); assert.equal(data.ok, true); calls++; });
+  h.requests[0].respond(200, { access_token: 'fake-new-token', expires_in: -1 });
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].headers.Authorization, 'Bearer fake-new-token');
+  h.requests[1].respond(200, { ok: true });
+  assert.equal(calls, 1);
+});
+
+test('401 followed by refresh and a 200 retry returns data', () => {
+  const { h, api } = setup();
+  const results = [];
+  api.getCurrentPlayback((err, data) => { results.push([err, data.ok]); });
+  h.requests[0].respond(401);
+  h.requests[1].respond(200, { access_token: 'fake-new-token', expires_in: 3600 });
+  h.requests[2].respond(200, { ok: true });
+  assert.deepEqual(results, [[null, true]]);
+  assert.equal(h.requests.length, 3);
 });
