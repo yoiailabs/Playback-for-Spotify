@@ -71,5 +71,17 @@
         }
       ]
     }
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "17.14.0"
+  },
+  "scripts": {
+    "test": "npm run test:js && npm run test:c",
+    "test:js": "node --test test/js/*.test.cjs",
+    "lint": "eslint .",
+    "test:c": "sh scripts/test-c.sh",
+    "lint:c": "python3 scripts/lint-c.py"
   }
 }

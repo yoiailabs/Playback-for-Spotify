@@ -1,0 +1,15 @@
+name: Set up Pebble SDK
+description: Install Pebble Tool 5.0.39 and SDK 4.33 for building (no emulator dependencies)
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.13'
+    # Building and analysis only need the SDK and its bundled ARM toolchain.
+    # The emulator's system libraries are intentionally not installed.
+    - name: Install tool and SDK
+      shell: bash
+      run: |
+        python -m pip install pebble-tool==5.0.39
+        pebble sdk install 4.33
