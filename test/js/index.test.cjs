@@ -100,9 +100,10 @@ test('symbolic and numeric AppMessage keys both dispatch commands', () => {
   assert.equal(previous, 1);
 });
 
-test('characterization: failed art download is not retried on the next playback poll', () => {
-  const h = harness();
-  const image = h.load('src/pkjs/image_transfer.js', { 'jpeg-js': {} }).module.exports;
+function setupArt(platform = 'basalt') {
+  const h = harness({ platform });
+  const jpeg = { decode: () => ({ data: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 }) };
+  const image = h.load('src/pkjs/image_transfer.js', { 'jpeg-js': jpeg }).module.exports;
   const playback = { item: {
     name: 'Test track', uri: 'spotify:track:test', duration_ms: 1000,
     album: { images: [{ width: 300, url: 'https://example.invalid/art.jpg' }] }
@@ -111,12 +112,111 @@ test('characterization: failed art download is not retried on the next playback 
     './spotify_auth': { init() {} }, './image_transfer': image,
     './spotify_api': { getCurrentPlayback: cb => cb(null, playback) }
   });
+  return { h, image, jpeg, playback, context };
+}
+
+function ackImages(h) {
+  for (let i = 0; i < h.messages.length; i++) {
+    const message = h.messages[i];
+    if (message.ack) message.ack();
+  }
+}
+
+for (const failure of ['http', 'network', 'decode', 'header', 'chunk']) {
+  test(`art ${failure} failure retries on a later poll and success prevents further downloads`, () => {
+    const { h, image, jpeg, context } = setupArt();
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 1);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 1, 'no duplicate download while pending');
+    if (failure === 'http') h.requests[0].respond(404);
+    else if (failure === 'network') h.requests[0].fail();
+    else if (failure === 'decode') {
+      const decode = jpeg.decode;
+      jpeg.decode = () => { throw new Error('Test decode failure'); };
+      h.requests[0].respond(200);
+      jpeg.decode = decode;
+    } else {
+      h.requests[0].respond(200);
+      const header = h.messages.find(message => message.body.ImageWidth);
+      if (failure === 'header') header.nack();
+      else {
+        header.ack();
+        h.messages.at(-1).nack();
+        assert.equal(h.runTimer(), 500);
+        h.messages.at(-1).nack();
+      }
+    }
+    const error = {
+      http: 'Download 404', network: 'Download failed', decode: 'Decode: Test decode failure',
+      header: 'Header fail', chunk: 'Chunk fail'
+    }[failure];
+    assert.ok(h.messages.some(message => message.body.ErrorMsg === error));
+    assert.equal(image.isTransferring(), false);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 2);
+    assert.equal(h.requests[1].url, h.requests[0].url);
+    h.messages.length = 0;
+    h.requests[1].respond(200);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 2, 'no duplicate download while transferring');
+    ackImages(h);
+    assert.equal(image.isTransferring(), false);
+    for (let i = 0; i < 5; i++) context.fetchNowPlaying();
+    assert.equal(h.requests.length, 2, 'successful art is cached');
+  });
+}
+
+test('art retries stop after three attempts per URL and a new URL resets the bound', () => {
+  const { h, playback, context } = setupArt();
+  for (let i = 0; i < 3; i++) {
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, i + 1);
+    h.requests[i].respond(404);
+  }
+  for (let i = 0; i < 10; i++) context.fetchNowPlaying();
+  assert.equal(h.requests.length, 3);
+  const url = 'https://example.invalid/new-art.jpg';
+  playback.item.album.images[0].url = url;
+  for (let i = 3; i < 6; i++) {
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, i + 1);
+    assert.equal(h.requests[i].url, url);
+    h.requests[i].fail();
+  }
+  for (let i = 0; i < 10; i++) context.fetchNowPlaying();
+  assert.equal(h.requests.length, 6);
+});
+
+test('prefetched current art is promoted without a new download', () => {
+  const { h, image, playback, context } = setupArt('emery');
   context.fetchNowPlaying();
-  assert.equal(h.requests.length, 1);
-  h.requests[0].respond(404);
-  assert.equal(image.isTransferring(), false);
+  h.requests[0].fail();
+  image.sendPrefetchFromUrl(playback.item.album.images[0].url, playback.item.uri);
+  h.requests[1].respond(200);
+  ackImages(h);
+  h.messages.length = 0;
   context.fetchNowPlaying();
-  // index.js retains lastImageUrl even though image_transfer.js clears lastUrl.
-  assert.equal(h.requests.length, 1);
-  assert.ok(h.messages.some(message => message.body.ErrorMsg === 'Download 404'));
+  assert.equal(h.messages[0].body.ImagePromote, 1);
+  context.fetchNowPlaying();
+  assert.equal(h.messages.filter(message => message.body.ImagePromote).length, 1);
+  h.messages[0].ack();
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 2);
+});
+
+test('failed promotion falls back to download and a failed fallback can retry on a later poll', () => {
+  const { h, image, playback, context } = setupArt('emery');
+  const url = playback.item.album.images[0].url;
+  image.sendPrefetchFromUrl(url, playback.item.uri);
+  h.requests[0].respond(200);
+  ackImages(h);
+  h.messages.length = 0;
+  context.fetchNowPlaying();
+  h.messages[0].nack();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].url, url);
+  h.requests[1].fail();
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 3);
 });

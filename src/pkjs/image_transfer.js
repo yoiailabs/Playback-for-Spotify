@@ -11,6 +11,7 @@ function getChunkSize() {
 // Slot 0 — currently displayed art
 var transferInProgress = false;
 var lastUrl = null;
+var failedUrl = null;
 
 // Slot 1 — prefetched next-track art (emery/gabbro only)
 var prefetchInProgress = false;
@@ -40,6 +41,13 @@ function sendError(msg) {
   try {
     Pebble.sendAppMessage({ 'ErrorMsg': msg });
   } catch (e) { }
+}
+
+function failImage(msg) {
+  failedUrl = lastUrl;
+  lastUrl = null;
+  transferInProgress = false;
+  sendError(msg);
 }
 
 function arrayBufferToBytes(ab) {
@@ -164,8 +172,7 @@ function processJpeg(jpegData, slot) {
     if (slot === 1) {
       resetPrefetch();
     } else {
-      lastUrl = null;
-      sendError('Decode: ' + ex.message);
+      failImage('Decode: ' + ex.message);
     }
   }
 }
@@ -175,6 +182,7 @@ function downloadAndSend(url) {
   // Current art always wins — abort any in-flight prefetch.
   if (prefetchInProgress) prefetchAbort = true;
   lastUrl = url;
+  failedUrl = null;
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url, true);
   xhr.responseType = 'arraybuffer';
@@ -182,13 +190,11 @@ function downloadAndSend(url) {
     if (xhr.status === 200) {
       processJpeg(arrayBufferToBytes(xhr.response), 0);
     } else {
-      lastUrl = null;
-      sendError('Download ' + xhr.status);
+      failImage('Download ' + xhr.status);
     }
   };
   xhr.onerror = function () {
-    lastUrl = null;
-    sendError('Download failed');
+    failImage('Download failed');
   };
   xhr.send();
 }
@@ -246,9 +252,7 @@ function sendImageToWatch(data, width, height, slot) {
     if (slot === 1) {
       resetPrefetch();
     } else {
-      transferInProgress = false;
-      lastUrl = null;
-      sendError('Header fail');
+      failImage('Header fail');
     }
   });
 }
@@ -267,9 +271,7 @@ function failChunkRun(slot) {
   if (slot === 1) {
     resetPrefetch();
   } else {
-    transferInProgress = false;
-    lastUrl = null;
-    sendError('Chunk fail');
+    failImage('Chunk fail');
   }
 }
 
@@ -313,6 +315,7 @@ function dropPrefetch() {
 function promotePrefetch() {
   if (!prefetchReady) return false;
   var promotedUrl = prefetchUrl;
+  failedUrl = null;
   Pebble.sendAppMessage({ 'ImagePromote': 1 }, function () {
     lastUrl = promotedUrl;
     resetPrefetch();
@@ -337,5 +340,6 @@ module.exports = {
   promotePrefetch: promotePrefetch,
   getPrefetchedUri: getPrefetchedUri,
   prefetchSupported: prefetchSupported,
+  getFailedUrl: function () { return failedUrl; },
   isTransferring: function () { return transferInProgress; }
 };
