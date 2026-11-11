@@ -51,6 +51,12 @@ function failImage(msg, url) {
   sendError(msg);
 }
 
+function failImageSend(msg, url) {
+  // Only one slot-0 send can be active, even if promotion changes lastUrl.
+  transferInProgress = false;
+  failImage(msg, url);
+}
+
 function arrayBufferToBytes(ab) {
   return new Uint8Array(ab);
 }
@@ -259,17 +265,17 @@ function sendImageToWatch(data, width, height, slot, url) {
     if (slot === 1) {
       resetPrefetch();
     } else {
-      failImage('Header fail', url);
+      failImageSend('Header fail', url);
     }
   });
 }
 
-function finishChunkRun(slot, url) {
+function finishChunkRun(slot) {
   if (slot === 1) {
     prefetchInProgress = false;
     prefetchAbort = false;
     prefetchReady = true;
-  } else if (url === lastUrl) {
+  } else {
     transferInProgress = false;
   }
 }
@@ -278,12 +284,12 @@ function failChunkRun(slot, url) {
   if (slot === 1) {
     resetPrefetch();
   } else {
-    failImage('Chunk fail', url);
+    failImageSend('Chunk fail', url);
   }
 }
 
 function sendChunk(data, index, totalChunks, chunkSize, slot, url) {
-  if (slot === 0 && url !== lastUrl) return;
+  if (slot === 0 && url !== lastUrl) { finishChunkRun(slot); return; }
   if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
 
   var start = index * chunkSize;
@@ -297,15 +303,15 @@ function sendChunk(data, index, totalChunks, chunkSize, slot, url) {
   Pebble.sendAppMessage(msg, function () {
     if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
     if (index + 1 < totalChunks) sendChunk(data, index + 1, totalChunks, chunkSize, slot, url);
-    else finishChunkRun(slot, url);
+    else finishChunkRun(slot);
   }, function () {
     setTimeout(function () {
-      if (slot === 0 && url !== lastUrl) return;
+      if (slot === 0 && url !== lastUrl) { finishChunkRun(slot); return; }
       if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
       Pebble.sendAppMessage(msg, function () {
         if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
         if (index + 1 < totalChunks) sendChunk(data, index + 1, totalChunks, chunkSize, slot, url);
-        else finishChunkRun(slot, url);
+        else finishChunkRun(slot);
       }, function () {
         failChunkRun(slot, url);
       });

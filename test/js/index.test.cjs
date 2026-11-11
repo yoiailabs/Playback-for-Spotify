@@ -251,6 +251,47 @@ test('prefetched current art is promoted without a new download', () => {
   assert.equal(h.requests.length, 2);
 });
 
+for (const outcome of ['ack', 'nack']) {
+  test(`a poll starts new art after a promoted URL makes a pending chunk ${outcome} stale`, () => {
+    const { h, image, playback, context } = setupArt('emery');
+    context.fetchNowPlaying();
+    const promotedUrl = 'https://example.invalid/promoted-art.jpg';
+    image.sendPrefetchFromUrl(promotedUrl, 'spotify:track:promoted');
+    h.requests[1].respond(200);
+    ackImages(h);
+    h.messages.length = 0;
+    h.requests[0].respond(200);
+    h.messages[0].ack();
+    const pendingChunk = h.messages.at(-1);
+    playback.item.uri = 'spotify:track:promoted';
+    playback.item.album.images[0].url = promotedUrl;
+    context.fetchNowPlaying();
+    h.messages.find(message => message.body.ImagePromote).ack();
+    assert.equal(image.isTransferring(), true, 'slot-0 still awaits its chunk callback');
+    pendingChunk[outcome]();
+    if (outcome === 'nack') {
+      h.clearTimeout(context.prefetchTimer);
+      assert.equal(h.runTimer(), 500);
+    }
+    assert.equal(image.isTransferring(), false);
+    assert.equal(image.getFailedUrl(), null);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 2, 'promoted art stays cached');
+    playback.item.uri = 'spotify:track:later';
+    playback.item.album.images[0].url = 'https://example.invalid/later-art.jpg';
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 3, 'a later poll can download current art');
+    const nextHeaderIndex = h.messages.length;
+    h.requests[2].respond(200);
+    for (let i = nextHeaderIndex; i < h.messages.length; i++) {
+      if (h.messages[i].ack) h.messages[i].ack();
+    }
+    assert.equal(image.isTransferring(), false);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 3, 'later art completes and stays cached');
+  });
+}
+
 test('failed promotion falls back to download and a failed fallback can retry on a later poll', () => {
   const { h, image, playback, context } = setupArt('emery');
   const url = playback.item.album.images[0].url;

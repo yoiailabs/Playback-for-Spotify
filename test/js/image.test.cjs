@@ -123,8 +123,10 @@ for (const failure of ['http', 'network']) {
       image.sendImageFromUrl(oldUrl);
       image.sendImageFromUrl(newUrl);
       if (newerTransferring) h.requests[1].respond(200);
+      const messageCount = h.messages.length;
       if (failure === 'http') h.requests[0].respond(404);
       else h.requests[0].fail();
+      assert.equal(h.messages.length, messageCount, 'stale failure sends no error or image messages');
       assert.equal(image.getFailedUrl(), null);
       assert.equal(context.lastUrl, newUrl);
       assert.equal(image.isTransferring(), newerTransferring);
@@ -136,6 +138,96 @@ for (const failure of ['http', 'network']) {
       assert.equal(image.isTransferring(), false);
     });
   }
+}
+
+for (const [phase, outcome] of [
+  ['header', 'ack'], ['header', 'nack'],
+  ['chunk', 'ack'], ['chunk', 'nack'], ['last chunk', 'ack'],
+  ['retry', 'ack'], ['retry', 'nack'], ['last retry', 'ack']
+]) {
+  test(`promotion during slot-0 ${phase} releases a stale send on ${outcome}`, () => {
+    const { h, context, image } = setup('emery');
+    const oldUrl = 'https://example.invalid/old-art.jpg';
+    const promotedUrl = 'https://example.invalid/promoted-art.jpg';
+    assert.equal(image.sendImageFromUrl(oldUrl), true);
+    // Prefetch is allowed while current art is downloading, before its send starts.
+    image.sendPrefetchFromUrl(promotedUrl, 'spotify:track:promoted');
+    h.requests[1].respond(200);
+    for (let i = 0; i < h.messages.length; i++) h.messages[i].ack();
+    h.messages.length = 0;
+    h.requests[0].respond(200);
+    const header = h.messages[0];
+    let pending = header;
+    if (phase !== 'header') {
+      header.ack();
+      pending = h.messages.at(-1);
+      if (phase.startsWith('last')) {
+        while (pending.body.ImageChunkIndex < header.body.ImageChunksTotal - 1) {
+          pending.ack();
+          pending = h.messages.at(-1);
+        }
+      }
+      if (phase.includes('retry')) {
+        pending.nack();
+        assert.equal(h.runTimer(), 500);
+        pending = h.messages.at(-1);
+      }
+    }
+    assert.equal(image.isTransferring(), true);
+    assert.equal(image.promotePrefetch(), true);
+    h.messages.at(-1).ack();
+    assert.equal(context.lastUrl, promotedUrl);
+    const messageCount = h.messages.length;
+    pending[outcome]();
+    if (phase === 'chunk' && outcome === 'nack') assert.equal(h.runTimer(), 500);
+    assert.equal(image.isTransferring(), false);
+    assert.equal(h.messages.length, messageCount, 'stale send stops without sending pixels or errors');
+    assert.equal(image.getFailedUrl(), null);
+    assert.equal(context.lastUrl, promotedUrl, 'promotion remains cached');
+    assert.equal(image.sendImageFromUrl(promotedUrl), false);
+    assert.equal(image.sendImageFromUrl('https://example.invalid/later-art.jpg'), true);
+    assert.equal(h.requests.length, 3, 'a later current-art download can start');
+    const nextHeaderIndex = h.messages.length;
+    h.requests[2].respond(200);
+    assert.equal(image.isTransferring(), true);
+    for (let i = nextHeaderIndex; i < h.messages.length; i++) h.messages[i].ack();
+    assert.equal(image.isTransferring(), false);
+  });
+}
+
+for (const phase of ['download', 'header', 'chunk', 'retry timeout', 'retry ack', 'retry nack']) {
+  test(`prefetch aborted during ${phase} releases its flags for a later prefetch`, () => {
+    const { h, image } = setup('emery');
+    image.sendPrefetchFromUrl('https://example.invalid/old-art.jpg', 'spotify:track:old');
+    let pending;
+    if (phase !== 'download') {
+      h.requests[0].respond(200);
+      pending = h.messages.at(-1);
+      if (phase !== 'header') {
+        pending.ack();
+        pending = h.messages.at(-1);
+        if (phase.startsWith('retry')) {
+          pending.nack();
+          if (phase !== 'retry timeout') {
+            assert.equal(h.runTimer(), 500);
+            pending = h.messages.at(-1);
+          }
+        }
+      }
+    }
+    image.dropPrefetch();
+    if (phase === 'download') h.requests[0].respond(200);
+    else if (phase === 'retry timeout') assert.equal(h.runTimer(), 500);
+    else if (phase === 'retry nack') pending.nack();
+    else pending.ack();
+    assert.equal(image.getPrefetchedUri(), null);
+    image.sendPrefetchFromUrl('https://example.invalid/next-art.jpg', 'spotify:track:next');
+    assert.equal(h.requests.length, 2, 'aborted prefetch no longer blocks a new download');
+    const nextHeaderIndex = h.messages.length;
+    h.requests[1].respond(200);
+    for (let i = nextHeaderIndex; i < h.messages.length; i++) h.messages[i].ack();
+    assert.equal(image.getPrefetchedUri(), 'spotify:track:next');
+  });
 }
 
 test('stale download success is discarded before decoding or sending', () => {
