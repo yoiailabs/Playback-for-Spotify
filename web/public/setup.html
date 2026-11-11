@@ -1,21 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="utf-8">
   <title>Ongaku for Spotify - Setup Guide</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { background: #121212; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 20px; max-width: 640px; margin: 0 auto; line-height: 1.6; }
-    h1 { color: #1DB954; font-size: 24px; }
-    h2 { color: #fff; font-size: 18px; margin-top: 32px; border-bottom: 1px solid #333; padding-bottom: 8px; }
-    a { color: #1DB954; }
-    code { background: #2a2a2a; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
-    .step { background: #1a1a1a; border-left: 3px solid #1DB954; padding: 12px 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
-    .step-num { color: #1DB954; font-weight: bold; font-size: 16px; }
-    .warn { background: #2a1a00; border-left: 3px solid #ff9800; padding: 12px 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
-    .url-box { background: #2a2a2a; padding: 10px 14px; border-radius: 8px; word-break: break-all; font-family: monospace; font-size: 13px; margin: 8px 0; user-select: all; }
-    img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
-    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #666; }
-  </style>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <h1>Ongaku for Spotify Setup Guide</h1>
@@ -24,7 +13,7 @@
   </div>
   <h2>Step 1: Create a Spotify App</h2>
   <div class="step">
-    <span class="step-num">1.</span> Go to the <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a> and log in. 
+    <span class="step-num">1.</span> Go to the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">Spotify Developer Dashboard</a> and log in.
     <ul>
       <li><strong>Important:</strong> Open the dev dashboard in Safari/Chrome/desktop, not inside the Pebble app.</li>
       <li><strong>If using mobile browser:</strong> You may need to set your browser zoom to 50% to see the "Create App" button.</li>
@@ -41,7 +30,7 @@
       <li><strong>App description:</strong> anything (e.g. "Pebble music control")</li>
       <li><strong>Redirect URI:</strong> paste the URL below exactly:</li>
     </ul>
-    <div class="url-box">https://alex523ap.github.io/playback_config/</div>
+    <div class="url-box">https://ongaku.yoiailabs.com/oauth/callback</div>
   </div>
   <div class="step">
     <span class="step-num">4.</span> Under <strong>Which API/SDKs are you planning to use?</strong>, select <strong>Web API</strong>.
@@ -50,6 +39,7 @@
     <span class="step-num">5.</span> Check the Terms of Service box and click <strong>Save</strong>.
   </div>
 
+  <p>If you used the previous configuration page, add this new Redirect URI to your existing Spotify app before logging in again.</p>
   <h2>Step 2: Copy Your Client ID</h2>
   <div class="step">
     <span class="step-num">6.</span> On your new app's page, click <strong>Settings</strong>.
@@ -74,8 +64,9 @@
   </div>
 
   <h2>That's it!</h2>
-  <p>Your Pebble will now connect to Spotify using your own app credentials with no user limit.</p>
+  <p>Your Pebble will now connect to Spotify using your own app credentials. Spotify account and developer app restrictions still apply.</p>
 
+  <p><a href="/">Back to settings</a></p>
   <div class="footer">
     Ongaku for Spotify
   </div>

@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run test:js
+      - run: npm run web:check
 
   c:
     name: C analysis and host tests

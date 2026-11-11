@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ongaku for Spotify - Settings</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/config-core.js" defer></script>
+  <script src="/settings-page.js" defer></script>
+</head>
+<body>
+  <h1>Ongaku for Spotify</h1>
+  <p id="status" role="status">Choose your settings or connect to Spotify.</p>
+  <label for="client-id">Spotify Client ID</label>
+  <input id="client-id" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+  <p>Use your own Spotify app. <a href="/setup.html">Setup guide</a></p>
+  <fieldset id="long-press-settings">
+    <legend>Long press UP/DOWN</legend>
+    <label for="long-press">On Now Playing</label>
+    <select id="long-press">
+      <option value="seek">Skip 15s</option>
+      <option value="volume">Volume</option>
+    </select>
+  </fieldset>
+  <p id="aplite-note" hidden>Aplite does not support long press UP/DOWN.</p>
+  <button id="save" class="secondary" type="button">Save settings</button>
+  <button id="login" type="button">Log in with Spotify</button>
+</body>
+</html>

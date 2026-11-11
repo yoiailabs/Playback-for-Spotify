@@ -389,11 +389,16 @@ static void handle_auth_status(DictionaryIterator *iter) {
 }
 
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
-  // JS ready signal
-  if (dict_find(iter, MESSAGE_KEY_JsReady)) {
-    handle_js_ready();
-    return;
+  // Settings and auth may share the startup dictionary with JsReady.
+  Tuple *mode = dict_find(iter, MESSAGE_KEY_LongPressMode);
+  if (mode && (mode->type == TUPLE_INT || mode->type == TUPLE_UINT) &&
+      mode->length == sizeof(int32_t) && long_press_mode_valid(mode->value->int32)) {
+    long_press_mode_set(mode->value->int32);
   }
+  bool js_ready = dict_find(iter, MESSAGE_KEY_JsReady) != NULL;
+  if (js_ready) handle_js_ready();
+  if (dict_find(iter, MESSAGE_KEY_AuthStatus)) handle_auth_status(iter);
+  if (js_ready) return;
 
   // Error message from JS
   if (dict_find(iter, MESSAGE_KEY_ErrorMsg)) {
@@ -422,12 +427,6 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // List done
   if (dict_find(iter, MESSAGE_KEY_ListDone)) {
     handle_list_done(iter);
-    return;
-  }
-
-  // Auth status
-  if (dict_find(iter, MESSAGE_KEY_AuthStatus)) {
-    handle_auth_status(iter);
     return;
   }
 
@@ -482,6 +481,7 @@ void comm_init(CommCallbacks callbacks) {
 #if defined(PBL_PLATFORM_APLITE)
   // Aplite has only 24 KB total app slot. Image chunks are 1000 B,
   // so a tight inbox is enough; outbox only carries small command messages.
+  // Startup settings/auth/ready use only 34 B (three int32 tuples).
   uint32_t inbox = 1200;
   uint32_t outbox = 256;
 #elif defined(PBL_PLATFORM_CHALK)

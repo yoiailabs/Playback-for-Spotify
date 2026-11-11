@@ -14,13 +14,12 @@ extern void now_playing_window_push(void);
 static Window *s_about_window;
 static MenuLayer *s_about_menu;
 
-#define APP_VERSION "1.3"
+#define APP_VERSION "1.4"
 #if defined(PBL_PLATFORM_APLITE)
 // Aplite has no tutorial (tutorial_show is a no-op stub) — skip the row.
-// Aplite also has no NP long-press feature, so no "Long Press" row.
 #define NUM_ABOUT_ROWS 2
 #else
-#define NUM_ABOUT_ROWS 4
+#define NUM_ABOUT_ROWS 3
 #endif
 
 static void tutorial_restart_done(void) {
@@ -50,10 +49,6 @@ static void about_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, voi
       menu_cell_basic_draw(ctx, cell, "Author", "alex_pavlov", NULL);
       break;
     case 2:
-      menu_cell_basic_draw(ctx, cell, "Long press UP/DOWN",
-        long_press_mode_get() == LP_MODE_VOLUME ? "Volume" : "Skip 15s", NULL);
-      break;
-    case 3:
       menu_cell_basic_draw(ctx, cell, "Version", APP_VERSION, NULL);
       break;
   }
@@ -64,9 +59,6 @@ static void about_select(MenuLayer *menu, MenuIndex *idx, void *d) {
 #if !defined(PBL_PLATFORM_APLITE)
   if (idx->row == 0) {
     tutorial_show(tutorial_restart_done);
-  } else if (idx->row == 2) {
-    long_press_mode_toggle();
-    menu_layer_reload_data(s_about_menu);
   }
 #else
   (void)idx;

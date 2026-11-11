@@ -60,7 +60,8 @@
       "ListItemTitle": 143,
       "ListItemSubtitle": 144,
       "ListItemUri": 145,
-      "ListDone": 146
+      "ListDone": 146,
+      "LongPressMode": 160
     },
     "resources": {
       "media": [
@@ -87,6 +88,8 @@
     "test:js": "node --test test/js/*.test.cjs",
     "lint": "eslint .",
     "test:c": "sh scripts/test-c.sh",
-    "lint:c": "python3 scripts/lint-c.py"
+    "lint:c": "python3 scripts/lint-c.py",
+    "web:check": "WRANGLER_SEND_METRICS=false wrangler deploy --config web/wrangler.jsonc --dry-run",
+    "web:deploy": "WRANGLER_SEND_METRICS=false wrangler deploy --config web/wrangler.jsonc"
   }
 }

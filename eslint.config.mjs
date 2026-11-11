@@ -32,6 +32,14 @@ export default [
     rules: { 'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^lastTrackUri$' }] }
   },
   {
+    files: ['web/public/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2017, sourceType: 'script',
+      globals: { ...globals.browser, module: 'readonly', ConfigCore: 'readonly' }
+    },
+    rules: { 'no-unused-vars': ['error', { caughtErrors: 'none' }] }
+  },
+  {
     files: ['test/js/**/*.cjs', 'eslint.config.mjs', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node }
   }

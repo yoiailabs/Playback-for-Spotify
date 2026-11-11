@@ -6,7 +6,7 @@ function setup(api = {}, platform = 'basalt') {
   const h = harness({ platform });
   const image = {
     prefetchSupported: () => false, getPrefetchedUri: () => null,
-    isTransferring: () => false, dropPrefetch() {}, sendImageFromUrl() {}
+    isTransferring: () => false, isBusy: () => false, dropPrefetch() {}, sendImageFromUrl() {}
   };
   const context = h.load('src/pkjs/index.js', {
     './spotify_auth': { init() {}, isAuthenticated: () => false },
@@ -18,7 +18,7 @@ function setup(api = {}, platform = 'basalt') {
 test('ready sends JsReady and unauthenticated status without starting timers', () => {
   const { h } = setup();
   h.listeners.ready();
-  assert.deepEqual(h.messages.map(m => plain(m.body)), [{ JsReady: 1 }, { AuthStatus: 0 }]);
+  assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: 0, JsReady: 1, AuthStatus: 0 }]);
   assert.equal(h.timers.size, 0);
 });
 test('now-playing builds track message using seconds and artist names', () => {
@@ -382,3 +382,87 @@ for (const activeArt of ['other', 'same']) {
     assert.equal(h.requests.length, 3, 'successful retry is cached');
   });
 }
+
+function setupSettings(initial = {}) {
+  const h = harness({ initial });
+  const auth = h.load('src/pkjs/spotify_auth.js').module.exports;
+  const image = { isBusy: () => false };
+  const context = h.load('src/pkjs/index.js', {
+    './spotify_auth': auth, './spotify_api': { getCurrentPlayback() {} }, './image_transfer': image
+  });
+  const save = payload => h.listeners.webviewclosed({ response: encodeURIComponent(JSON.stringify(payload)) });
+  return { h, auth, context, image, save };
+}
+test('startup resends stored settings in one message with readiness and auth', () => {
+  const { h } = setupSettings({ ongaku_settings: JSON.stringify({ longPressMode: 'volume' }) });
+  h.listeners.ready();
+  assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: 1, JsReady: 1, AuthStatus: 0 }]);
+  assert.equal(h.timers.size, 0);
+});
+test('invalid stored settings fall back to seek on startup', () => {
+  for (const value of ['{', 'null', '{}', '{"longPressMode":"invalid"}']) {
+    const { h } = setupSettings({ ongaku_settings: value });
+    h.listeners.ready();
+    assert.equal(h.messages[0].body.LongPressMode, 0);
+  }
+});
+test('login with settings coalesces auth and settings into one message', () => {
+  const { h, save } = setupSettings();
+  save({ token: 'token', refreshToken: 'refresh', clientId: 'client', expiresIn: 60, settings: { longPressMode: 'volume' } });
+  // Polling is also scheduled; run the zero-delay settings timer specifically.
+  const timer = [...h.timers.values()].find(t => t.delay === 0);
+  assert.ok(timer);
+  timer.fn();
+  assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: 1, AuthStatus: 1 }]);
+  assert.equal(h.localStorage.getItem('spotify_refresh_token'), 'refresh');
+});
+for (const busy of ['image', 'list']) {
+  test(`settings save waits for ${busy} transfer, coalesces updates and sends latest once`, () => {
+    const { h, context, image, save } = setupSettings();
+    if (busy === 'image') image.isBusy = () => true;
+    else context.listSendInProgress = true;
+    save({ settings: { longPressMode: 'volume' } });
+    assert.equal(h.runTimer(), 0);
+    assert.equal(h.messages.length, 0);
+    save({ settings: { longPressMode: 'seek' } });
+    assert.equal(h.timers.size, 1);
+    image.isBusy = () => false;
+    context.listSendInProgress = false;
+    assert.equal(h.runTimer(), 250);
+    assert.deepEqual(h.messages.map(m => plain(m.body)), [{ LongPressMode: 0 }]);
+    assert.equal(h.timers.size, 0);
+  });
+}
+for (const slot of ['current', 'prefetch', 'promotion']) {
+  test(`settings delivery waits for actual ${slot} image ACK chain`, () => {
+    const { h, image, playback, context } = setupArt('emery');
+    if (slot === 'current') context.fetchNowPlaying();
+    else image.sendPrefetchFromUrl(playback.item.album.images[0].url, playback.item.uri);
+    h.requests[0].respond(200);
+    if (slot === 'promotion') {
+      ackImages(h);
+      image.promotePrefetch();
+    }
+    context.sendSettings({});
+    context.flushSettings();
+    assert.equal(h.messages.some(m => m.body.LongPressMode !== undefined), false);
+    ackImages(h);
+    context.flushSettings();
+    assert.equal(h.messages.at(-1).body.LongPressMode, 0);
+  });
+}
+
+test('an image download completing during settings delivery waits for the control ACK', () => {
+  const { h, image } = setupArt('emery');
+  const settings = h.load('src/pkjs/settings.js').module.exports;
+  settings.send({}, null, null, image.sendControlMessage);
+  const control = h.messages[0];
+  image.sendImageFromUrl('https://example.invalid/art.jpg');
+  h.requests[0].respond(200);
+  assert.equal(h.messages.length, 1, 'image header cannot collide with settings');
+  control.ack();
+  assert.equal(h.runTimer(), 100);
+  assert.ok(h.messages.at(-1).body.ImageWidth);
+  ackImages(h);
+  assert.equal(image.isBusy(), false);
+});

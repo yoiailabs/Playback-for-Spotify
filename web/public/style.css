@@ -1,0 +1,22 @@
+body { background: #121212; color: #e0e0e0; font-family: -apple-system, sans-serif; padding: 20px; max-width: 640px; margin: 0 auto; line-height: 1.6; }
+    h1 { color: #1DB954; font-size: 24px; }
+    h2 { color: #fff; font-size: 18px; margin-top: 32px; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    a { color: #1DB954; }
+    code { background: #2a2a2a; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+    .step { background: #1a1a1a; border-left: 3px solid #1DB954; padding: 12px 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+    .step-num { color: #1DB954; font-weight: bold; font-size: 16px; }
+    .warn { background: #2a1a00; border-left: 3px solid #ff9800; padding: 12px 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+    .url-box { background: #2a2a2a; padding: 10px 14px; border-radius: 8px; word-break: break-all; font-family: monospace; font-size: 13px; margin: 8px 0; user-select: all; }
+    img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #666; }
+body { box-sizing: border-box; }
+label, input, select, button, .button { display: block; }
+label, fieldset { margin-top: 24px; }
+input, select { box-sizing: border-box; width: 100%; margin-top: 8px; padding: 12px; border: 1px solid #777; border-radius: 6px; background: #222; color: #fff; font: inherit; }
+fieldset { border: 0; padding: 0; }
+button, .button { box-sizing: border-box; width: 100%; margin-top: 20px; padding: 12px; border: 1px solid #1db954; border-radius: 6px; background: #1db954; color: #071b0e; font: inherit; font-weight: bold; text-align: center; text-decoration: none; cursor: pointer; }
+button.secondary { background: transparent; color: #e0e0e0; }
+button:disabled { opacity: 0.6; cursor: wait; }
+:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+[hidden] { display: none; }
+#status { overflow-wrap: anywhere; }

@@ -8,3 +8,6 @@ test/c/bin/marquee_test
 "${CC:-cc}" -std=c99 -O2 -g -Wall -Wextra -Werror \
   test/c/progress_test.c src/c/progress.c -o test/c/bin/progress_test
 test/c/bin/progress_test
+"${CC:-cc}" -std=c99 -O2 -g -Wall -Wextra -Werror \
+  test/c/settings_test.c src/c/settings.c -o test/c/bin/settings_test
+test/c/bin/settings_test

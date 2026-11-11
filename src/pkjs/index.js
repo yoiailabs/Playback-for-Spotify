@@ -1,4 +1,5 @@
 var auth = require('./spotify_auth');
+var settings = require('./settings');
 var api = require('./spotify_api');
 var imageTransfer = require('./image_transfer');
 
@@ -56,9 +57,28 @@ function sendError(msg) {
   } catch (e) { /* best effort */ }
 }
 
-function sendAuthStatus() {
-  var authed = auth.isAuthenticated() ? 1 : 0;
-  Pebble.sendAppMessage({ 'AuthStatus': authed }, null, null);
+// Coalesce configuration changes and wait for image chunks/list ACK chains.
+// A failed send is recovered by the single startup resend on the next launch.
+var settingsTimer = null;
+var pendingSettings = null;
+function sendSettings(extra) {
+  if (!pendingSettings) pendingSettings = {};
+  for (var key in extra) {
+    if (Object.prototype.hasOwnProperty.call(extra, key)) pendingSettings[key] = extra[key];
+  }
+  if (settingsTimer !== null) return;
+  settingsTimer = setTimeout(flushSettings, 0);
+}
+
+function flushSettings() {
+  settingsTimer = null;
+  if (listSendInProgress || imageTransfer.isBusy()) {
+    settingsTimer = setTimeout(flushSettings, 250);
+    return;
+  }
+  var extra = pendingSettings;
+  pendingSettings = null;
+  settings.send(extra, null, null, imageTransfer.sendControlMessage);
 }
 
 // --- Now Playing ---
@@ -239,7 +259,7 @@ function fetchAndSendList(listType, apiFn, formatFn) {
   apiFn(function(err, data) {
     if (err) {
       sendError(err.message);
-      if (err.message === 'Token expired') sendAuthStatus();
+      if (err.message === 'Token expired') sendSettings({ 'AuthStatus': auth.isAuthenticated() ? 1 : 0 });
       return;
     }
     if (!data) {
@@ -555,14 +575,14 @@ function handleCommand(cmd, context) {
 }
 
 auth.init(function(authed) {
-  sendAuthStatus();
+  sendSettings({ 'AuthStatus': authed ? 1 : 0 });
   if (authed) startPolling();
   else stopPolling();
-});
+}, function() { sendSettings({}); });
 
 Pebble.addEventListener('ready', function() {
-  Pebble.sendAppMessage({ 'JsReady': 1 });
-  sendAuthStatus();
+  settings.send({ 'JsReady': 1, 'AuthStatus': auth.isAuthenticated() ? 1 : 0 },
+    null, null, imageTransfer.sendControlMessage);
   if (auth.isAuthenticated()) {
     startPolling();
     setTimeout(fetchNowPlaying, 1000);
