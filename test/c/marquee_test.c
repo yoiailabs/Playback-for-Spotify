@@ -138,13 +138,39 @@ static void layer_stop_and_destroy_unregister(void) {
   assert(marquee_layer_get_layer(NULL) == NULL);
   marquee_layer_destroy(NULL);
 }
-static void characterization_font_change_keeps_stale_width(void) {
+static void font_after_text_measures_width(void) {
   MarqueeLayer *ml = marquee_layer_create(GRect(0, 0, 10, 20));
   marquee_layer_set_text(ml, "long text"); // font initially NULL
   assert(ml->m.text_width == 0);
   marquee_layer_set_font(ml, "test-font");
-  // Existing bug: set_font assigns font before marquee_set's equality guard.
-  assert(ml->m.text_width == 0 && !ml->m.registered);
+  assert(strcmp(ml->m.text, "long text") == 0);
+  assert(ml->m.text_width == 45 && ml->m.max_offset == 35);
+  assert(ml->m.registered && registrations == 1);
+  marquee_layer_destroy(ml);
+}
+static void changed_font_updates_scroll_registration(void) {
+  MarqueeLayer *ml = marquee_layer_create(GRect(0, 0, 60, 20));
+  marquee_layer_set_font(ml, "test-font");
+  marquee_layer_set_text(ml, "long text");
+  assert(ml->m.text_width == 45 && !ml->m.registered);
+  marquee_layer_set_font(ml, "wide-font");
+  assert(ml->m.text_width == 90 && ml->m.max_offset == 30);
+  assert(ml->m.registered && registrations == 1);
+  ml->m.px_offset = 4; ml->m.pause = 7;
+  marquee_layer_set_font(ml, "test-font");
+  assert(ml->m.text_width == 45 && !ml->m.registered);
+  assert(ml->m.px_offset == 0 && ml->m.pause == END_PAUSE_TICKS);
+  assert(cancellations == 1 && s_timer == NULL);
+  marquee_layer_destroy(ml);
+}
+static void same_font_preserves_scroll_position(void) {
+  MarqueeLayer *ml = marquee_layer_create(GRect(0, 0, 10, 20));
+  marquee_layer_set_font(ml, "test-font");
+  marquee_layer_set_text(ml, "long text");
+  ml->m.px_offset = 4; ml->m.pause = 7;
+  marquee_layer_set_font(ml, "test-font");
+  assert(ml->m.px_offset == 4 && ml->m.pause == 7);
+  assert(ml->m.registered && registrations == 1 && cancellations == 0);
   marquee_layer_destroy(ml);
 }
 
@@ -162,7 +188,9 @@ int main(void) {
   RUN(registry_capacity_and_compaction);
   RUN(shared_timer_updates_independent_offsets);
   RUN(layer_stop_and_destroy_unregister);
-  RUN(characterization_font_change_keeps_stale_width);
+  RUN(font_after_text_measures_width);
+  RUN(changed_font_updates_scroll_registration);
+  RUN(same_font_preserves_scroll_position);
   reset();
   printf("%u C tests passed\n", count);
   return 0;

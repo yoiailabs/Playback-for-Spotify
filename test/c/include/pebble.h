@@ -24,12 +24,13 @@ typedef struct Layer { GRect frame; void *data; } Layer;
 AppTimer *app_timer_register(uint32_t ms, AppTimerCallback callback, void *data);
 void app_timer_cancel(AppTimer *timer);
 
-// A fixed five-pixel glyph is sufficient to test overflow math independently
+// Fixed five- or ten-pixel glyphs test overflow math independently
 // of watch font metrics. Rendering and real timer scheduling are not modeled.
 static inline GSize graphics_text_layout_get_content_size(
     const char *text, GFont font, GRect box, GTextOverflowMode overflow,
     GTextAlignment alignment) {
-  return (GSize){(int16_t)(strlen(text) * 5), 10};
+  int glyph_width = strcmp(font, "wide-font") == 0 ? 10 : 5;
+  return (GSize){(int16_t)(strlen(text) * glyph_width), 10};
 }
 static inline Layer *layer_create_with_data(GRect frame, size_t size) {
   Layer *layer = calloc(1, sizeof(*layer));
