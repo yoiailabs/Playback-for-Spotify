@@ -1,18 +1,13 @@
 name: Set up Pebble SDK
-description: Install Pebble Tool 5.0.39 and SDK 4.33 on Ubuntu 24.04
+description: Install Pebble Tool 5.0.39 and SDK 4.33 for building (no emulator dependencies)
 runs:
   using: composite
   steps:
     - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
       with:
         python-version: '3.13'
-    - name: Install Linux dependencies
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install --yes --no-install-recommends \
-          build-essential libsdl2-2.0-0 libglib2.0-0t64 libpixman-1-0 \
-          zlib1g libsndio7.0 libfdt1 libfreetype6 libpng16-16t64
+    # Building and analysis only need the SDK and its bundled ARM toolchain.
+    # The emulator's system libraries are intentionally not installed.
     - name: Install tool and SDK
       shell: bash
       run: |

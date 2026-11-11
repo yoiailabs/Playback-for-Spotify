@@ -27,7 +27,7 @@ def sdk_core_path():
 def main():
     os.chdir(Path(__file__).resolve().parent.parent)
     if not shutil.which("cppcheck"):
-        raise SystemExit("Install cppcheck 2.22.0 (cppcheck-wheel) to run C analysis.")
+        raise SystemExit("Install Cppcheck 2.22.0 (PyPI package cppcheck==1.5.3) to run C analysis.")
     core = sdk_core_path()
     platform_file = core / "pebble/common/tools/pebble_sdk_platform.py"
     if not platform_file.is_file():
