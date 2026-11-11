@@ -97,14 +97,54 @@ test('refresh without rotation preserves the previous refresh token', () => {
   h.requests[0].respond(200, { access_token: 'fake-new-token', expires_in: 60 });
   assert.equal(h.localStorage.getItem('spotify_refresh_token'), 'fake-refresh-token');
 });
-test('characterization: malformed refresh JSON throws and loses queued callbacks', () => {
-  const { h, auth } = setup(credentials);
-  let calls = 0;
-  auth.refreshAccessToken(() => { calls++; });
-  auth.refreshAccessToken(() => { calls++; });
-  assert.throws(() => h.requests[0].respond(200, '{'), /JSON|property/);
-  assert.equal(calls, 0);
-  auth.refreshAccessToken(() => { calls++; });
-  h.requests[1].respond(200, { access_token: 'fake-new-token', expires_in: 60 });
-  assert.equal(calls, 1);
-});
+for (const body of ['{', '{}', 'null', '{"access_token":null}', '{"access_token":123}',
+  '{"access_token":""}', '{"access_token":"   "}']) {
+  test(`invalid refresh response ${body} fails all callbacks without saving and allows a later refresh`, () => {
+    const initial = { ...credentials, spotify_token: 'fake-old-token', spotify_token_expiry: '1' };
+    const { h, auth } = setup(initial);
+    const results = [];
+    const record = (err, token) => results.push([err && err.message, token]);
+    const writes = [];
+    const setItem = h.localStorage.setItem;
+    h.localStorage.setItem = (key, value) => { writes.push(key); setItem(key, value); };
+    auth.refreshAccessToken(record);
+    auth.refreshAccessToken(record);
+    auth.refreshAccessToken(record);
+    assert.doesNotThrow(() => h.requests[0].respond(200, body));
+    assert.deepEqual(results, Array.from({ length: 3 }, () => ['Refresh failed', null]));
+    assert.deepEqual(writes, []);
+    for (const [key, value] of Object.entries(initial)) assert.equal(h.localStorage.getItem(key), value);
+    auth.refreshAccessToken(record);
+    assert.equal(h.requests.length, 2);
+    h.requests[1].respond(200, { access_token: 'fake-new-token', expires_in: 60 });
+    assert.equal(results.length, 4);
+    assert.deepEqual(results[3], [null, 'fake-new-token']);
+    assert.equal(auth.getToken(), 'fake-new-token');
+  });
+}
+
+for (const outcome of ['success', 'http', 'network', 'invalid']) {
+  test(`throwing refresh callbacks do not block the queue or later refreshes on ${outcome}`, () => {
+    const { h, auth } = setup(credentials);
+    const calls = [];
+    const record = (name, throws) => (err, token) => {
+      calls.push([name, err && err.message, token]);
+      if (throws) throw new Error('Test callback failure');
+    };
+    auth.refreshAccessToken(record('direct', true));
+    auth.refreshAccessToken(record('queued-first', true));
+    auth.refreshAccessToken(record('queued-last', false));
+    assert.doesNotThrow(() => {
+      if (outcome === 'network') h.requests[0].fail();
+      else if (outcome === 'http') h.requests[0].respond(400);
+      else h.requests[0].respond(200, outcome === 'invalid' ? '{' : { access_token: 'fake-new-token', expires_in: 60 });
+    });
+    const error = outcome === 'success' ? null : outcome === 'network' ? 'Network error' : 'Refresh failed';
+    const token = outcome === 'success' ? 'fake-new-token' : null;
+    assert.deepEqual(calls, ['direct', 'queued-first', 'queued-last'].map(name => [name, error, token]));
+    auth.refreshAccessToken(record('later', false));
+    assert.equal(h.requests.length, 2);
+    h.requests[1].respond(200, { access_token: 'fake-later-token', expires_in: 60 });
+    assert.deepEqual(calls[3], ['later', null, 'fake-later-token']);
+  });
+}
