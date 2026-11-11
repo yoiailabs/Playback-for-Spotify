@@ -8,7 +8,7 @@
   ],
   "private": true,
   "dependencies": {
-    "jpeg-js": "^0.3.7"
+    "jpeg-js": "^0.4.4"
   },
   "pebble": {
     "displayName": "Playback for Spotify",
@@ -75,10 +75,13 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "acorn": "8.19.0",
     "eslint": "9.39.5",
-    "globals": "17.14.0"
+    "globals": "17.14.0",
+    "patch-package": "8.0.1"
   },
   "scripts": {
+    "postinstall": "patch-package --error-on-fail",
     "test": "npm run test:js && npm run test:c",
     "test:js": "node --test test/js/*.test.cjs",
     "lint": "eslint .",

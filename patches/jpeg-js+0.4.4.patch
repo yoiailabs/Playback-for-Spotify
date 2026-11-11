@@ -1,0 +1,79 @@
+diff --git a/node_modules/jpeg-js/lib/decoder.js b/node_modules/jpeg-js/lib/decoder.js
+index 1982481..75ab110 100644
+--- a/node_modules/jpeg-js/lib/decoder.js
++++ b/node_modules/jpeg-js/lib/decoder.js
+@@ -737,7 +737,7 @@ var JpegImage = (function jpegImage() {
+             var pixelsInFrame = frame.scanLines * frame.samplesPerLine;
+             if (pixelsInFrame > maxResolutionInPixels) {
+               var exceededAmount = Math.ceil((pixelsInFrame - maxResolutionInPixels) / 1e6);
+-              throw new Error(`maxResolutionInMP limit exceeded by ${exceededAmount}MP`);
++              throw new Error('maxResolutionInMP limit exceeded by ' + exceededAmount + 'MP');
+             }
+ 
+             var componentsCount = data[offset++], componentId;
+@@ -833,10 +833,10 @@ var JpegImage = (function jpegImage() {
+               // Recover from malformed APP1 markers popular in some phone models.
+               // See https://github.com/eugeneware/jpeg-js/issues/82
+               if (malformedDataOffset !== -1) {
+-                throw new Error(`first unknown JPEG marker at offset ${malformedDataOffset.toString(16)}, second unknown JPEG marker ${fileMarker.toString(16)} at offset ${(offset - 1).toString(16)}`);
++                throw new Error('first unknown JPEG marker at offset ' + malformedDataOffset.toString(16) + ', second unknown JPEG marker ' + fileMarker.toString(16) + ' at offset ' + (offset - 1).toString(16));
+               }
+               malformedDataOffset = offset - 1;
+-              const nextOffset = readUint16();
++              var nextOffset = readUint16();
+               if (data[offset + nextOffset - 2] === 0xFF) {
+                 offset += nextOffset - 2;
+                 break;
+@@ -1064,11 +1064,12 @@ var JpegImage = (function jpegImage() {
+   // We cap the amount of memory used by jpeg-js to avoid unexpected OOMs from untrusted content.
+   var totalBytesAllocated = 0;
+   var maxMemoryUsageBytes = 0;
+-  function requestMemoryAllocation(increaseAmount = 0) {
++  function requestMemoryAllocation(increaseAmount) {
++    if (typeof increaseAmount === 'undefined') increaseAmount = 0;
+     var totalMemoryImpactBytes = totalBytesAllocated + increaseAmount;
+     if (totalMemoryImpactBytes > maxMemoryUsageBytes) {
+       var exceededAmount = Math.ceil((totalMemoryImpactBytes - maxMemoryUsageBytes) / 1024 / 1024);
+-      throw new Error(`maxMemoryUsageInMB limit exceeded by at least ${exceededAmount}MB`);
++      throw new Error('maxMemoryUsageInMB limit exceeded by at least ' + exceededAmount + 'MB');
+     }
+ 
+     totalBytesAllocated = totalMemoryImpactBytes;
+@@ -1095,7 +1096,8 @@ if (typeof module !== 'undefined') {
+ 	window['jpeg-js'].decode = decode;
+ }
+ 
+-function decode(jpegData, userOpts = {}) {
++function decode(jpegData, userOpts) {
++  if (typeof userOpts === 'undefined') userOpts = {};
+   var defaultOpts = {
+     // "undefined" means "Choose whether to transform colors based on the image’s color model."
+     colorTransform: undefined,
+@@ -1106,7 +1108,13 @@ function decode(jpegData, userOpts = {}) {
+     maxMemoryUsageInMB: 512, // Don't decode if memory footprint is more than 512MB
+   };
+ 
+-  var opts = {...defaultOpts, ...userOpts};
++  // ES5 syntax for the SDK webpack 1 parser and PKJS runtime.
++  var opts = defaultOpts;
++  Object.keys(userOpts || {}).forEach(function (key) {
++    Object.defineProperty(opts, key, {
++      value: userOpts[key], enumerable: true, configurable: true, writable: true
++    });
++  });
+   var arr = new Uint8Array(jpegData);
+   var decoder = new JpegImage();
+   decoder.opts = opts;
+diff --git a/node_modules/jpeg-js/lib/encoder.js b/node_modules/jpeg-js/lib/encoder.js
+index fdbc184..856c61d 100644
+--- a/node_modules/jpeg-js/lib/encoder.js
++++ b/node_modules/jpeg-js/lib/encoder.js
+@@ -539,7 +539,7 @@ function JPEGEncoder(quality) {
+ 		function writeCOM(comments)
+ 		{
+ 			if (typeof comments === "undefined" || comments.constructor !== Array) return;
+-			comments.forEach(e => {
++			comments.forEach(function (e) {
+ 				if (typeof e !== "string") return;
+ 				writeWord(0xFFFE); // marker
+ 				var l = e.length;
