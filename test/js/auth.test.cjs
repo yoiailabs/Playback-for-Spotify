@@ -148,3 +148,30 @@ for (const outcome of ['success', 'http', 'network', 'invalid']) {
     assert.deepEqual(calls[3], ['later', null, 'fake-later-token']);
   });
 }
+
+for (const body of [
+  '{"access_token":"fake-sensitive-access",',
+  '{"refresh_token":"fake-sensitive-refresh"}',
+  '{"access_token":123,"refresh_token":"fake-sensitive-refresh"}'
+]) {
+  test(`invalid 200 refresh response logs status without its body: ${body}`, () => {
+    const { h, auth } = setup(credentials);
+    const logs = [];
+    h.console.log = message => logs.push(message);
+    let error;
+    auth.refreshAccessToken(err => { error = err; });
+    h.requests[0].respond(200, body);
+    assert.equal(error.message, 'Refresh failed');
+    assert.ok(logs.includes('[playback] Refresh failed: 200'));
+    assert.ok(logs.every(message => !message.includes('fake-sensitive') && !message.includes(body)));
+  });
+}
+
+test('non-200 refresh failure preserves status and body logging', () => {
+  const { h, auth } = setup(credentials);
+  const logs = [];
+  h.console.log = message => logs.push(message);
+  auth.refreshAccessToken(() => {});
+  h.requests[0].respond(400, '{"error":"invalid_grant"}');
+  assert.ok(logs.includes('[playback] Refresh failed: 400 {"error":"invalid_grant"}'));
+});

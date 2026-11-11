@@ -114,7 +114,8 @@ function refreshAccessToken(callback) {
       console.log('[playback] Token refreshed successfully');
       finishRefresh(null, data.access_token);
     } else {
-      console.log('[playback] Refresh failed: ' + xhr.status + ' ' + xhr.responseText);
+      console.log('[playback] Refresh failed: ' + xhr.status +
+                  (xhr.status === 200 ? '' : ' ' + xhr.responseText));
       finishRefresh(new Error('Refresh failed'), null);
     }
   };
