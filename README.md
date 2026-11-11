@@ -9,8 +9,9 @@ installs the upstream app, not Ongaku for Spotify. The repository name remains `
 Version 1.4.0 introduces the new name and app UUID
 `c5d2c288-0e8b-4b80-bd43-530bb57bb7f5`, allowing Ongaku for Spotify to be installed
 alongside the original store app. The minor version bump marks this separate app
-identity. It is a fresh installation: log in to Spotify again, repeat the tutorial,
-and choose your long-press setting again. The tutorial and long-press setting are
+identity. It is a fresh installation: log in to Spotify again, enter your Client ID again
+if the settings page does not already show it, repeat the tutorial, and choose
+your long-press setting again. The tutorial and long-press setting are
 unavailable on Aplite.
 
 ![basalt menu](screenshots/basalt_1_menu.png) ![basalt now playing](screenshots/basalt_2_adele.png) ![basalt now playing 2](screenshots/basalt_3_weeknd.png)
