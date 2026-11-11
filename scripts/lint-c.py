@@ -28,6 +28,11 @@ def main():
     os.chdir(Path(__file__).resolve().parent.parent)
     if not shutil.which("cppcheck"):
         raise SystemExit("Install Cppcheck 2.22.0 (PyPI package cppcheck==1.5.3) to run C analysis.")
+    version = subprocess.run(["cppcheck", "--version"], check=True,
+                             capture_output=True, text=True).stdout
+    if "2.22.0" not in version:
+        print(f"warning: CI uses Cppcheck 2.22.0; found {version.strip()}. "
+              "Results may differ.", flush=True)
     core = sdk_core_path()
     platform_file = core / "pebble/common/tools/pebble_sdk_platform.py"
     if not platform_file.is_file():

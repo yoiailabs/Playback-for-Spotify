@@ -88,7 +88,7 @@ The build step reads `.env` and generates `src/pkjs/debug_env.js` (also gitignor
 
 ## Development
 
-Use Node.js 20+, Python 3, and a host C compiler (`cc`, or set `CC`). Install
+Use Node.js 22+, Python 3, and a host C compiler (`cc`, or set `CC`). Install
 Pebble Tool 5.0.39 and SDK 4.33 using the [SDK setup guide](https://developer.repebble.com/sdk/).
 For static analysis, install the same version used by CI:
 `pipx install cppcheck==1.5.3` (PyPI wrapper that ships Cppcheck 2.22.0).
