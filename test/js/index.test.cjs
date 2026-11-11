@@ -306,28 +306,6 @@ for (const outcome of ['ack', 'nack']) {
   });
 }
 
-test('promotion ACK followed by PrefetchAbort downloads the current art on the next poll', () => {
-  const { h, image, playback, context } = setupArt('emery');
-  const url = playback.item.album.images[0].url;
-  image.sendPrefetchFromUrl(url, playback.item.uri);
-  h.requests[0].respond(200);
-  ackImages(h);
-  context.fetchNowPlaying();
-  h.messages.find(message => message.body.ImagePromote).ack();
-  h.listeners.appmessage({ payload: { PrefetchAbort: 1 } });
-  context.fetchNowPlaying();
-  assert.equal(h.requests.length, 2, 'the promoted URL is no longer cached');
-  assert.equal(h.requests[1].url, url);
-  const headerIndex = h.messages.length;
-  h.requests[1].respond(200);
-  for (let i = headerIndex; i < h.messages.length; i++) {
-    if (h.messages[i].ack) h.messages[i].ack();
-  }
-  assert.equal(image.isTransferring(), false);
-  context.fetchNowPlaying();
-  assert.equal(h.requests.length, 2, 'the completed slot-0 transfer stays cached');
-});
-
 test('PrefetchAbort during a slot-0 send preserves the active art transfer', () => {
   const { h, image, context } = setupArt('emery');
   context.fetchNowPlaying();

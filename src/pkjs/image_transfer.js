@@ -347,18 +347,12 @@ function getPrefetchedUri() {
   return prefetchReady ? prefetchTrackUri : null;
 }
 
-function invalidateCurrentUrl() {
-  // A missing promoted bitmap needs a fresh download; preserve any active send.
-  if (!transferInProgress) lastUrl = null;
-}
-
 module.exports = {
   sendImageFromUrl: downloadAndSend,
   sendPrefetchFromUrl: downloadPrefetch,
   dropPrefetch: dropPrefetch,
   promotePrefetch: promotePrefetch,
   getPrefetchedUri: getPrefetchedUri,
-  invalidateCurrentUrl: invalidateCurrentUrl,
   prefetchSupported: prefetchSupported,
   getFailedUrl: function () { return failedUrl; },
   isTransferring: function () { return transferInProgress; }

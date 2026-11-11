@@ -579,7 +579,6 @@ Pebble.addEventListener('appmessage', function(e) {
     // fetchNowPlaying takes the slot-0 slow path (and refreshes the
     // currently shown art if we're already stuck).
     imageTransfer.dropPrefetch();
-    imageTransfer.invalidateCurrentUrl();
     lastImageUrl = null;
   }
 });
