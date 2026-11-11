@@ -143,64 +143,6 @@ static void auth_status_cb(bool authenticated) {
   }
 }
 
-// --- Controls callbacks ---
-
-typedef enum {
-  MUSIC_CMD_PLAY_PAUSE,
-  MUSIC_CMD_NEXT,
-  MUSIC_CMD_PREV,
-  MUSIC_CMD_VOL_UP,
-  MUSIC_CMD_VOL_DOWN,
-  MUSIC_CMD_SEEK_FWD,
-  MUSIC_CMD_SEEK_BACK
-} MusicCommand;
-
-static void music_command_cb(MusicCommand cmd) {
-  switch (cmd) {
-    case MUSIC_CMD_PLAY_PAUSE:
-      comm_send_command(CMD_PLAY_PAUSE, NULL);
-      ui_set_status(s_playing ? "Pausing..." : "Playing...");
-      break;
-    case MUSIC_CMD_NEXT:
-      ui_hint_animation_dir(false);
-      comm_send_command(CMD_NEXT_TRACK, NULL);
-      ui_set_status("Next...");
-      break;
-    case MUSIC_CMD_PREV:
-      ui_hint_animation_dir(true);
-      comm_send_command(CMD_PREV_TRACK, NULL);
-      ui_set_status("Previous...");
-      break;
-    case MUSIC_CMD_VOL_UP:
-      comm_send_command(CMD_VOLUME_UP, NULL);
-      ui_set_status("Volume +");
-      break;
-    case MUSIC_CMD_VOL_DOWN:
-      comm_send_command(CMD_VOLUME_DOWN, NULL);
-      ui_set_status("Volume -");
-      break;
-    case MUSIC_CMD_SEEK_FWD:
-      comm_send_command(CMD_SEEK_FORWARD, NULL);
-      ui_set_status("Forward 15s");
-      // Optimistic UI: shift progress now, the next poll reconciles.
-      if (s_total > 0) {
-        s_elapsed += 15;
-        if (s_elapsed > s_total) s_elapsed = s_total;
-        ui_set_progress(s_elapsed, s_total);
-      }
-      break;
-    case MUSIC_CMD_SEEK_BACK:
-      comm_send_command(CMD_SEEK_BACK, NULL);
-      ui_set_status("Back 15s");
-      if (s_total > 0) {
-        s_elapsed -= 15;
-        if (s_elapsed < 0) s_elapsed = 0;
-        ui_set_progress(s_elapsed, s_total);
-      }
-      break;
-  }
-}
-
 // --- Now Playing window click config ---
 
 static void np_up_click(ClickRecognizerRef r, void *ctx) {
@@ -223,14 +165,36 @@ static void np_select_click(ClickRecognizerRef r, void *ctx) {
 #if !defined(PBL_PLATFORM_APLITE)
 // Hold UP/DOWN on NP: jumps in the scrubber direction (UP = earlier, DOWN
 // = later) when in SEEK mode; in VOLUME mode UP/DOWN follow the usual
-// louder/quieter convention. music_command_cb handles status text and
-// optimistic UI updates.
+// louder/quieter convention. Update status text and seek progress locally.
 static void np_up_long_click(ClickRecognizerRef r, void *ctx) {
-  music_command_cb(s_long_press_mode == LP_MODE_VOLUME ? MUSIC_CMD_VOL_UP : MUSIC_CMD_SEEK_BACK);
+  if (s_long_press_mode == LP_MODE_VOLUME) {
+    comm_send_command(CMD_VOLUME_UP, NULL);
+    ui_set_status("Volume +");
+  } else {
+    comm_send_command(CMD_SEEK_BACK, NULL);
+    ui_set_status("Back 15s");
+    if (s_total > 0) {
+      s_elapsed -= 15;
+      if (s_elapsed < 0) s_elapsed = 0;
+      ui_set_progress(s_elapsed, s_total);
+    }
+  }
 }
 
 static void np_down_long_click(ClickRecognizerRef r, void *ctx) {
-  music_command_cb(s_long_press_mode == LP_MODE_VOLUME ? MUSIC_CMD_VOL_DOWN : MUSIC_CMD_SEEK_FWD);
+  if (s_long_press_mode == LP_MODE_VOLUME) {
+    comm_send_command(CMD_VOLUME_DOWN, NULL);
+    ui_set_status("Volume -");
+  } else {
+    comm_send_command(CMD_SEEK_FORWARD, NULL);
+    ui_set_status("Forward 15s");
+    // Optimistic UI: shift progress now, the next poll reconciles.
+    if (s_total > 0) {
+      s_elapsed += 15;
+      if (s_elapsed > s_total) s_elapsed = s_total;
+      ui_set_progress(s_elapsed, s_total);
+    }
+  }
 }
 #endif
 
