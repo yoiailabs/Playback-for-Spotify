@@ -19,7 +19,7 @@
   }
 
   document.getElementById('save').onclick = function() {
-    window.location.href = core.closeUrl(settings(), { clientId: clientId.value.trim() });
+    window.location.href = core.closeUrl(settings());
   };
 
   login.onclick = async function() {

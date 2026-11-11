@@ -80,14 +80,15 @@ const loginSession = {
 };
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
-test('settings page pre-fills client/mode and settings-only save needs no login', () => {
+test('settings-only save omits an edited Client ID and needs no login', () => {
   const p = page('settings-page.js', '?client_id=client&long_press=volume&platform=aplite&authed=1');
   assert.equal(p.element('client-id').value, 'client');
   assert.equal(p.element('long-press-settings').hidden, true);
   assert.equal(p.element('aplite-note').hidden, false);
   assert.match(p.element('status').textContent, /connected/);
+  p.element('client-id').value = 'new-client';
   p.element('save').onclick();
-  assert.deepEqual(decodeClose(p.window.location.href), { clientId: 'client', settings: { longPressMode: 'volume' } });
+  assert.deepEqual(decodeClose(p.window.location.href), { settings: { longPressMode: 'volume' } });
 });
 test('login stores verifier/state/client/pending settings and redirects with challenge', async () => {
   const p = page('settings-page.js', '?client_id=client&long_press=volume');
@@ -236,7 +237,7 @@ function returnToPhone(h, url) {
   }
 }
 for (const platform of ['basalt', 'aplite']) {
-  test(`${platform}: unknown phone mode opens without a choice and Client-ID-only save sends no watch setting`, () => {
+  test(`${platform}: unknown phone mode opens without a choice and saving an edited Client ID changes nothing`, () => {
     const h = phone(platform);
     const search = new URL(h.Pebble.openedURL).search;
     assert.equal(new URLSearchParams(search).has('long_press'), false);
@@ -245,10 +246,11 @@ for (const platform of ['basalt', 'aplite']) {
     assert.equal(p.element('long-press-settings').hidden, platform === 'aplite');
     p.element('client-id').value = 'client';
     p.element('save').onclick();
-    assert.deepEqual(decodeClose(p.window.location.href), { clientId: 'client' });
+    assert.deepEqual(decodeClose(p.window.location.href), {});
     returnToPhone(h, p.window.location.href);
     assert.equal(h.localStorage.getItem('ongaku_settings'), null);
     assert.equal(h.messages.length, 0);
+    assert.equal(h.localStorage.getItem('spotify_client_id'), null);
   });
   test(`${platform}: login without a mode preserves unknown through PKCE and sends no LongPressMode`, async () => {
     const h = phone(platform);

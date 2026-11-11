@@ -392,13 +392,17 @@ static void handle_auth_status(DictionaryIterator *iter) {
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // Settings and auth may share the startup dictionary with JsReady.
   Tuple *mode = dict_find(iter, MESSAGE_KEY_LongPressMode);
+  bool handled = mode != NULL;
   if (mode && long_press_mode_tuple_valid(mode->type, mode->length,
       mode->length == 4 ? mode->value->int32 : 0)) {
     long_press_mode_set(mode->value->int32);
   }
   bool js_ready = dict_find(iter, MESSAGE_KEY_JsReady) != NULL;
   if (js_ready) handle_js_ready();
-  if (dict_find(iter, MESSAGE_KEY_AuthStatus)) handle_auth_status(iter);
+  if (dict_find(iter, MESSAGE_KEY_AuthStatus)) {
+    handle_auth_status(iter);
+    handled = true;
+  }
   if (js_ready) {
     // Auth may already have queued a playback command. Piggyback the report
     // there, or send it alone after any active outbox dictionary completes.
@@ -456,6 +460,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     return;
   }
 
+  if (handled) return;
   APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown message received");
 }
 

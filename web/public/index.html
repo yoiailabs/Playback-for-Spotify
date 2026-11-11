@@ -12,7 +12,8 @@
   <h1>Ongaku for Spotify</h1>
   <p id="status" role="status">Choose your settings or connect to Spotify.</p>
   <label for="client-id">Spotify Client ID</label>
-  <input id="client-id" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+  <input id="client-id" aria-describedby="client-id-hint" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+  <p id="client-id-hint">A new Client ID takes effect when you log in.</p>
   <p>Use your own Spotify app. <a href="/setup.html">Setup guide</a></p>
   <fieldset id="long-press-settings">
     <legend>Long press UP/DOWN</legend>
