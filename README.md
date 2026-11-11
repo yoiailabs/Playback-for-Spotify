@@ -1,7 +1,17 @@
-# Playback for Spotify
+# Ongaku for Spotify
 
 Control Spotify from your Pebble smartwatch. Browse playlists, artists, albums and liked songs, skip tracks, adjust volume, and see album art — all from your wrist.
-[Repebble AppStore link](https://apps.repebble.com/cd7c4d5fe7ec4989a64976c6)
+
+Based on [Playback for Spotify](https://github.com/alex523ap/Playback-for-Spotify) by alex523ap.
+The [original Repebble AppStore listing](https://apps.repebble.com/cd7c4d5fe7ec4989a64976c6)
+installs the upstream app, not Ongaku for Spotify. The repository name remains `Playback-for-Spotify`.
+
+Version 1.4.0 introduces the new name and app UUID
+`c5d2c288-0e8b-4b80-bd43-530bb57bb7f5`, allowing Ongaku for Spotify to be installed
+alongside the original store app. The minor version bump marks this separate app
+identity. It is a fresh installation: log in to Spotify again, repeat the tutorial,
+and choose your long-press setting again. The tutorial and long-press setting are
+unavailable on Aplite.
 
 ![basalt menu](screenshots/basalt_1_menu.png) ![basalt now playing](screenshots/basalt_2_adele.png) ![basalt now playing 2](screenshots/basalt_3_weeknd.png)
 
@@ -30,26 +40,25 @@ Control Spotify from your Pebble smartwatch. Browse playlists, artists, albums a
 
 ## Setup
 
-### 1. Deploy the Config Page
+### 1. Configuration Page
 
-The config page handles Spotify OAuth login. You need to host it yourself:
-
-1. Fork the [playback_config](https://github.com/alex523ap/playback_config) repo
-2. Enable GitHub Pages in repo settings (deploy from `main` branch)
-3. Update the [Redirect URL](https://github.com/alex523ap/Playback-for-Spotify/blob/efab8a25782437fd5ffa348742ecea22f6f1f143/src/pkjs/spotify_auth.js#L4) in your Spotify app and playback_config index.html Redirect URL to match your GitHub Pages URL
+Ongaku for Spotify uses the existing [configuration page](https://alex523ap.github.io/playback_config/)
+for Spotify OAuth login with Authorization Code + PKCE. No new hosting is required.
+The hosted page still says "Playback"; the updated names in this repository's
+`config/` files do not change that external page.
 
 ### 2. Create a Spotify App
 
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create a new app
-3. Set Redirect URL to your config page URL (e.g. `https://yourusername.github.io/playback_config/`)
+3. Set Redirect URI to exactly `https://alex523ap.github.io/playback_config/`
 4. Copy your **Client ID**
 
 ### 3. Install the App
 
 1. Clone this repo
 2. Run `pebble build && pebble install`
-3. Open Settings on your phone for the Playback app
+3. Open Settings on your phone for Ongaku for Spotify
 4. Enter your Client ID and log in with Spotify
 
 ## Controls
@@ -93,7 +102,7 @@ pebble install --phone IP_ADDRESS  # real watch
 
 The emulator can't reach the phone's config page, so OAuth has to be completed manually in a browser and the resulting token URL saved to a `.env` file.
 
-1. Open your deployed config page in a regular browser (the GitHub Pages URL from setup).
+1. Open the configuration page linked in Setup in a regular browser.
 2. Enter your Client ID and log in with Spotify as you normally would.
 3. On the success page, right-click the **Return to Pebble** button and copy its link — it looks like `pebblejs://close#%7B%22token%22...%7D`.
 4. Create a `.env` file at the repo root (it's gitignored):
