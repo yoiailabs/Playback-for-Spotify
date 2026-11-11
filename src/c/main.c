@@ -1,6 +1,5 @@
 #include <pebble.h>
 #include "comm.h"
-#include "controls.h"
 #include "ui.h"
 #include "menu.h"
 #include "list.h"
@@ -146,6 +145,16 @@ static void auth_status_cb(bool authenticated) {
 
 // --- Controls callbacks ---
 
+typedef enum {
+  MUSIC_CMD_PLAY_PAUSE,
+  MUSIC_CMD_NEXT,
+  MUSIC_CMD_PREV,
+  MUSIC_CMD_VOL_UP,
+  MUSIC_CMD_VOL_DOWN,
+  MUSIC_CMD_SEEK_FWD,
+  MUSIC_CMD_SEEK_BACK
+} MusicCommand;
+
 static void music_command_cb(MusicCommand cmd) {
   switch (cmd) {
     case MUSIC_CMD_PLAY_PAUSE:
@@ -189,14 +198,6 @@ static void music_command_cb(MusicCommand cmd) {
         ui_set_progress(s_elapsed, s_total);
       }
       break;
-  }
-}
-
-static void mode_changed_cb(ControlMode mode) {
-  if (mode == CONTROL_MODE_VOLUME) {
-    ui_set_status("Volume Mode");
-  } else {
-    ui_set_status("Track Mode");
   }
 }
 
@@ -323,7 +324,6 @@ static void init(void) {
     .on_auth_status = auth_status_cb,
   };
   comm_init(cbs);
-  controls_init(music_command_cb, mode_changed_cb);
   touch_input_init();
   long_press_mode_load();
   menu_window_push();
@@ -344,7 +344,6 @@ static void init(void) {
 
 static void deinit(void) {
   stop_ticking();
-  controls_deinit();
   touch_input_deinit();
   comm_deinit();
 }

@@ -32,11 +32,6 @@ export default [
     rules: { 'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^lastTrackUri$' }] }
   },
   {
-    files: ['src/pkjs/spotify_auth.js'],
-    // Existing unused scope declaration differs from the config page's actual scopes.
-    rules: { 'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^SPOTIFY_SCOPES$' }] }
-  },
-  {
     files: ['test/js/**/*.cjs', 'eslint.config.mjs', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node }
   }
