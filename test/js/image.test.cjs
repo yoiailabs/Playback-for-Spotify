@@ -113,3 +113,62 @@ test('download errors clear cached URL so a later request can retry', () => {
   h.requests[1].fail();
   assert.equal(h.messages[1].body.ErrorMsg, 'Download failed');
 });
+
+for (const failure of ['http', 'network']) {
+  for (const newerTransferring of [false, true]) {
+    test(`stale ${failure} failure preserves newer art while ${newerTransferring ? 'transferring' : 'downloading'}`, () => {
+      const { h, context, image } = setup();
+      const oldUrl = 'https://example.invalid/old-art.jpg';
+      const newUrl = 'https://example.invalid/new-art.jpg';
+      image.sendImageFromUrl(oldUrl);
+      image.sendImageFromUrl(newUrl);
+      if (newerTransferring) h.requests[1].respond(200);
+      if (failure === 'http') h.requests[0].respond(404);
+      else h.requests[0].fail();
+      assert.equal(image.getFailedUrl(), null);
+      assert.equal(context.lastUrl, newUrl);
+      assert.equal(image.isTransferring(), newerTransferring);
+      image.sendImageFromUrl(newUrl);
+      assert.equal(h.requests.length, 2, 'newer request remains cached while pending');
+      if (!newerTransferring) h.requests[1].respond(200);
+      h.messages.find(message => message.body.ImageWidth).nack();
+      assert.equal(image.getFailedUrl(), newUrl, 'the current request can still fail normally');
+      assert.equal(image.isTransferring(), false);
+    });
+  }
+}
+
+test('stale download success is discarded before decoding or sending', () => {
+  const { h, context, image } = setup();
+  image.sendImageFromUrl('https://example.invalid/old-art.jpg');
+  const newUrl = 'https://example.invalid/new-art.jpg';
+  image.sendImageFromUrl(newUrl);
+  context.jpeg.decode = () => { throw new Error('Stale image must not be decoded'); };
+  h.requests[0].respond(200);
+  assert.equal(h.messages.length, 0);
+  assert.equal(image.getFailedUrl(), null);
+  assert.equal(context.lastUrl, newUrl);
+  assert.equal(image.isTransferring(), false);
+});
+
+for (const replacement of ['dropped', 'replaced']) {
+  test(`promotion NACK downloads the captured URL after prefetch is ${replacement}`, () => {
+    const { h, image } = setup('emery');
+    const promotedUrl = 'https://example.invalid/promoted-art.jpg';
+    image.sendPrefetchFromUrl(promotedUrl, 'spotify:track:promoted');
+    h.requests[0].respond(200);
+    h.messages[0].ack();
+    // A single pixel still expands to the platform's full image size.
+    for (let i = 1; i < h.messages.length; i++) h.messages[i].ack();
+    assert.equal(image.promotePrefetch(), true);
+    const promotion = h.messages[h.messages.length - 1];
+    image.dropPrefetch();
+    if (replacement === 'replaced') {
+      image.sendPrefetchFromUrl('https://example.invalid/next-art.jpg', 'spotify:track:next');
+    }
+    promotion.nack();
+    assert.equal(h.requests[h.requests.length - 1].url, promotedUrl);
+    assert.equal(h.requests.filter(request => request.url === promotedUrl).length, 2);
+    assert.equal(image.getFailedUrl(), null, 'fallback download started');
+  });
+}

@@ -167,7 +167,7 @@ for (const failure of ['http', 'network', 'decode', 'header', 'chunk']) {
   });
 }
 
-test('art retries stop after three attempts per URL and a new URL resets the bound', () => {
+test('art retries stop after three attempts per track and URL and a new URL resets the bound', () => {
   const { h, playback, context } = setupArt();
   for (let i = 0; i < 3; i++) {
     context.fetchNowPlaying();
@@ -186,6 +186,52 @@ test('art retries stop after three attempts per URL and a new URL resets the bou
   }
   for (let i = 0; i < 10; i++) context.fetchNowPlaying();
   assert.equal(h.requests.length, 6);
+});
+
+test('a new track sharing failed album art gets its own bounded retry budget', () => {
+  const { h, playback, context } = setupArt();
+  const url = playback.item.album.images[0].url;
+  for (const uri of ['spotify:track:first', 'spotify:track:second']) {
+    playback.item.uri = uri;
+    const start = h.requests.length;
+    for (let i = 0; i < 3; i++) {
+      context.fetchNowPlaying();
+      assert.equal(h.requests.length, start + i + 1);
+      assert.equal(h.requests[start + i].url, url);
+      h.requests[start + i].fail();
+    }
+    for (let i = 0; i < 10; i++) context.fetchNowPlaying();
+    assert.equal(h.requests.length, start + 3);
+  }
+  assert.equal(h.requests.length, 6);
+});
+
+test('a stale art failure does not duplicate the newer download or spend its retry budget', () => {
+  const { h, playback, context } = setupArt();
+  context.fetchNowPlaying();
+  playback.item.uri = 'spotify:track:new';
+  playback.item.album.images[0].url = 'https://example.invalid/new-art.jpg';
+  context.fetchNowPlaying();
+  h.requests[0].fail();
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 2);
+  for (let i = 1; i <= 3; i++) {
+    h.requests[i].fail();
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, Math.min(i + 2, 4));
+  }
+  for (let i = 0; i < 10; i++) context.fetchNowPlaying();
+  assert.equal(h.requests.length, 4, 'one old attempt plus three newer attempts');
+});
+
+test('successfully cached album art stays cached across tracks sharing the URL', () => {
+  const { h, playback, context } = setupArt();
+  context.fetchNowPlaying();
+  h.requests[0].respond(200);
+  ackImages(h);
+  playback.item.uri = 'spotify:track:second';
+  for (let i = 0; i < 5; i++) context.fetchNowPlaying();
+  assert.equal(h.requests.length, 1);
 });
 
 test('prefetched current art is promoted without a new download', () => {
@@ -220,3 +266,42 @@ test('failed promotion falls back to download and a failed fallback can retry on
   context.fetchNowPlaying();
   assert.equal(h.requests.length, 3);
 });
+
+for (const activeArt of ['other', 'same']) {
+  test(`a promotion fallback blocked by ${activeArt} art retries the same track on a later poll`, () => {
+    const { h, image, playback, context } = setupArt('emery');
+    const url = playback.item.album.images[0].url;
+    image.sendPrefetchFromUrl(url, playback.item.uri);
+    h.requests[0].respond(200);
+    ackImages(h);
+    h.messages.length = 0;
+    context.fetchNowPlaying();
+    const promotion = h.messages[0];
+    // A slot-0 transfer starts before the promotion NACK arrives.
+    image.sendImageFromUrl(activeArt === 'same' ? url : 'https://example.invalid/other-art.jpg');
+    h.requests[1].respond(200);
+    image.dropPrefetch();
+    promotion.nack();
+    assert.equal(h.requests.length, 2, 'fallback is blocked by the active transfer');
+    assert.equal(image.getFailedUrl(), url);
+    assert.equal(image.isTransferring(), true);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 2);
+    // Complete only the active transfer, leaving the failed promotion alone.
+    for (let i = 1; i < h.messages.length; i++) {
+      if (h.messages[i].ack) h.messages[i].ack();
+    }
+    assert.equal(image.isTransferring(), false);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests[2].url, url);
+    const headerIndex = h.messages.length;
+    h.requests[2].respond(200);
+    for (let i = headerIndex; i < h.messages.length; i++) {
+      if (h.messages[i].ack) h.messages[i].ack();
+    }
+    assert.equal(image.isTransferring(), false);
+    context.fetchNowPlaying();
+    assert.equal(h.requests.length, 3, 'successful retry is cached');
+  });
+}

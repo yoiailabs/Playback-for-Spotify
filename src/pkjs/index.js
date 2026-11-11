@@ -7,6 +7,7 @@ var POLL_INTERVAL = 5000;
 var currentVolume = 50;
 var lastImageUrl = null;
 var imageAttemptUrl = null;
+var imageAttemptTrackUri = null;
 var imageAttempts = 0;
 var MAX_IMAGE_ATTEMPTS = 3;
 var listSendInProgress = false;
@@ -98,11 +99,13 @@ function fetchNowPlaying() {
 
     if (artImages && artImages.length > 0) {
       var imageUrl = pickImageUrl(artImages, getTargetArtSize());
-      if (imageUrl !== imageAttemptUrl) {
+      var trackUri = track.uri || null;
+      if (imageUrl !== imageAttemptUrl || trackUri !== imageAttemptTrackUri) {
         imageAttemptUrl = imageUrl;
+        imageAttemptTrackUri = trackUri;
         imageAttempts = 0;
       }
-      // Retry failed slot-0 art on later polls, with a fixed budget per URL.
+      // Retry failed slot-0 art on later polls, with a fixed budget per track and URL.
       if (imageUrl && imageAttempts < MAX_IMAGE_ATTEMPTS &&
           (imageUrl !== lastImageUrl || imageTransfer.getFailedUrl() === imageUrl)) {
         // Fast path: if a prefetched art matches the new track, swap it in
