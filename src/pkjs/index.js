@@ -106,7 +106,7 @@ function fetchNowPlaying() {
         imageAttempts = 0;
       }
       // Retry failed slot-0 art on later polls, with a fixed budget per track and URL.
-      if (imageUrl && imageAttempts < MAX_IMAGE_ATTEMPTS &&
+      if (imageUrl && imageAttempts < MAX_IMAGE_ATTEMPTS && !imageTransfer.isTransferring() &&
           (imageUrl !== lastImageUrl || imageTransfer.getFailedUrl() === imageUrl)) {
         // Fast path: if a prefetched art matches the new track, swap it in
         // with a single ImagePromote message instead of a full transfer.
@@ -114,7 +114,7 @@ function fetchNowPlaying() {
           lastImageUrl = imageUrl;
           imageAttempts++;
           imageTransfer.promotePrefetch();
-        } else if (!imageTransfer.isTransferring()) {
+        } else {
           lastImageUrl = imageUrl;
           imageAttempts++;
           // Slot-0 transfer will free C-side prefetch buffers in
@@ -579,6 +579,7 @@ Pebble.addEventListener('appmessage', function(e) {
     // fetchNowPlaying takes the slot-0 slow path (and refreshes the
     // currently shown art if we're already stuck).
     imageTransfer.dropPrefetch();
+    imageTransfer.invalidateCurrentUrl();
     lastImageUrl = null;
   }
 });

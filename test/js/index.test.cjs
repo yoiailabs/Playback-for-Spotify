@@ -252,7 +252,7 @@ test('prefetched current art is promoted without a new download', () => {
 });
 
 for (const outcome of ['ack', 'nack']) {
-  test(`a poll starts new art after a promoted URL makes a pending chunk ${outcome} stale`, () => {
+  test(`promotion waits for a slot-0 chunk ${outcome} before a later poll promotes`, () => {
     const { h, image, playback, context } = setupArt('emery');
     context.fetchNowPlaying();
     const promotedUrl = 'https://example.invalid/promoted-art.jpg';
@@ -265,15 +265,29 @@ for (const outcome of ['ack', 'nack']) {
     const pendingChunk = h.messages.at(-1);
     playback.item.uri = 'spotify:track:promoted';
     playback.item.album.images[0].url = promotedUrl;
-    context.fetchNowPlaying();
-    h.messages.find(message => message.body.ImagePromote).ack();
-    assert.equal(image.isTransferring(), true, 'slot-0 still awaits its chunk callback');
+    for (let i = 0; i < 5; i++) context.fetchNowPlaying();
+    assert.equal(h.messages.some(message => message.body.ImagePromote), false);
+    assert.equal(h.requests.length, 2, 'busy polls start no downloads');
+    assert.equal(context.imageAttempts, 0, 'busy polls consume no attempts');
+    assert.notEqual(context.lastImageUrl, promotedUrl);
+    assert.equal(image.isTransferring(), true);
+    const completionIndex = h.messages.length;
     pendingChunk[outcome]();
     if (outcome === 'nack') {
       h.clearTimeout(context.prefetchTimer);
       assert.equal(h.runTimer(), 500);
+      h.messages.at(-1).nack();
+    } else {
+      for (let i = completionIndex; i < h.messages.length; i++) {
+        if (h.messages[i].ack) h.messages[i].ack();
+      }
     }
     assert.equal(image.isTransferring(), false);
+    context.fetchNowPlaying();
+    const promotion = h.messages.find(message => message.body.ImagePromote);
+    assert.ok(promotion, 'a later poll promotes once the send finishes');
+    assert.equal(context.imageAttempts, 1);
+    promotion.ack();
     assert.equal(image.getFailedUrl(), null);
     context.fetchNowPlaying();
     assert.equal(h.requests.length, 2, 'promoted art stays cached');
@@ -291,6 +305,50 @@ for (const outcome of ['ack', 'nack']) {
     assert.equal(h.requests.length, 3, 'later art completes and stays cached');
   });
 }
+
+test('promotion ACK followed by PrefetchAbort downloads the current art on the next poll', () => {
+  const { h, image, playback, context } = setupArt('emery');
+  const url = playback.item.album.images[0].url;
+  image.sendPrefetchFromUrl(url, playback.item.uri);
+  h.requests[0].respond(200);
+  ackImages(h);
+  context.fetchNowPlaying();
+  h.messages.find(message => message.body.ImagePromote).ack();
+  h.listeners.appmessage({ payload: { PrefetchAbort: 1 } });
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 2, 'the promoted URL is no longer cached');
+  assert.equal(h.requests[1].url, url);
+  const headerIndex = h.messages.length;
+  h.requests[1].respond(200);
+  for (let i = headerIndex; i < h.messages.length; i++) {
+    if (h.messages[i].ack) h.messages[i].ack();
+  }
+  assert.equal(image.isTransferring(), false);
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 2, 'the completed slot-0 transfer stays cached');
+});
+
+test('PrefetchAbort during a slot-0 send preserves the active art transfer', () => {
+  const { h, image, context } = setupArt('emery');
+  context.fetchNowPlaying();
+  h.requests[0].respond(200);
+  h.messages.find(message => message.body.ImageWidth).ack();
+  h.listeners.appmessage({ payload: { PrefetchAbort: 1 } });
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 1);
+  assert.equal(image.isTransferring(), true);
+  // Complete the pending chunk and all remaining chunks without replaying the header.
+  const firstChunk = h.messages.findIndex(message => message.body.ImageChunkIndex === 0);
+  const header = h.messages.find(message => message.body.ImageWidth);
+  for (let i = firstChunk; i < h.messages.length; i++) {
+    if (h.messages[i].ack) h.messages[i].ack();
+  }
+  assert.equal(h.messages.filter(message => message.body.ImageChunkData).length, header.body.ImageChunksTotal);
+  assert.equal(image.isTransferring(), false);
+  assert.equal(image.getFailedUrl(), null);
+  context.fetchNowPlaying();
+  assert.equal(h.requests.length, 1, 'active art remains cached after completion');
+});
 
 test('failed promotion falls back to download and a failed fallback can retry on a later poll', () => {
   const { h, image, playback, context } = setupArt('emery');
