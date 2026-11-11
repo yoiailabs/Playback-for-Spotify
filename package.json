@@ -1,7 +1,7 @@
 {
   "name": "playback",
   "author": "alex_pavlov",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "license": "MIT",
   "keywords": [
     "pebble-app"
@@ -11,8 +11,8 @@
     "jpeg-js": "^0.4.4"
   },
   "pebble": {
-    "displayName": "Playback for Spotify",
-    "uuid": "1c757a48-f5c3-4f59-bd13-5618d6750f73",
+    "displayName": "Ongaku for Spotify",
+    "uuid": "c5d2c288-0e8b-4b80-bd43-530bb57bb7f5",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": [

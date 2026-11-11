@@ -485,7 +485,7 @@ void ui_init(Window *window) {
   // On reopen these already hold the last known track — layers will be
   // initialized to that text so the dedup check stays in sync.
   if (!s_title_pending[0]) {
-    strncpy(s_title_pending, "Playback", sizeof(s_title_pending) - 1);
+    strncpy(s_title_pending, "Ongaku for Spotify", sizeof(s_title_pending) - 1);
     strncpy(s_artist_buf, "No track playing", sizeof(s_artist_buf) - 1);
   }
   // Keep display buffer in sync with incoming buffer so TextLayer init shows
@@ -755,7 +755,7 @@ static void no_track_timeout_cb(void *ctx) {
   s_no_track_timer = NULL;
   if (s_track_received || !s_title_layer) return;
   // Animate "No track playing" in from the right (against clean black background)
-  strncpy(s_title_pending, "Playback", sizeof(s_title_pending) - 1);
+  strncpy(s_title_pending, "Ongaku for Spotify", sizeof(s_title_pending) - 1);
   s_title_pending[sizeof(s_title_pending) - 1] = '\0';
   strncpy(s_artist_buf, "No track playing", sizeof(s_artist_buf) - 1);
   s_artist_buf[sizeof(s_artist_buf) - 1] = '\0';
