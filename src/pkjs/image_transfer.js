@@ -11,6 +11,7 @@ function getChunkSize() {
 // Slot 0 — currently displayed art
 var transferInProgress = false;
 var lastUrl = null;
+var failedUrl = null;
 
 // Slot 1 — prefetched next-track art (emery/gabbro only)
 var prefetchInProgress = false;
@@ -40,6 +41,20 @@ function sendError(msg) {
   try {
     Pebble.sendAppMessage({ 'ErrorMsg': msg });
   } catch (e) { }
+}
+
+function failImage(msg, url) {
+  if (url !== lastUrl) return;
+  failedUrl = url;
+  lastUrl = null;
+  transferInProgress = false;
+  sendError(msg);
+}
+
+function failImageSend(msg, url) {
+  // Only one slot-0 send can be active, even if promotion changes lastUrl.
+  transferInProgress = false;
+  failImage(msg, url);
 }
 
 function arrayBufferToBytes(ab) {
@@ -143,7 +158,8 @@ function resetPrefetch() {
   prefetchReady = false;
 }
 
-function processJpeg(jpegData, slot) {
+function processJpeg(jpegData, slot, url) {
+  if (url === undefined) url = lastUrl;
   try {
     var raw = jpeg.decode(jpegData, { useTArray: true });
     var W = 144, H = 106, isRound = false;
@@ -159,38 +175,39 @@ function processJpeg(jpegData, slot) {
       : isColorPlatform() ? resizeAndQuantize(raw.data, raw.width, raw.height, W, H)
         : resizeAndDither(raw.data, raw.width, raw.height, W, H);
 
-    sendImageToWatch(imageData, W, H, slot);
+    sendImageToWatch(imageData, W, H, slot, url);
   } catch (ex) {
     if (slot === 1) {
       resetPrefetch();
     } else {
-      lastUrl = null;
-      sendError('Decode: ' + ex.message);
+      failImage('Decode: ' + ex.message, url);
     }
   }
 }
 
 function downloadAndSend(url) {
-  if (transferInProgress || url === lastUrl) return;
+  if (!url || transferInProgress || (url === lastUrl && failedUrl !== url)) return false;
   // Current art always wins — abort any in-flight prefetch.
   if (prefetchInProgress) prefetchAbort = true;
   lastUrl = url;
+  failedUrl = null;
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url, true);
   xhr.responseType = 'arraybuffer';
   xhr.onload = function () {
+    // A newer track may have started downloading while this request was pending.
+    if (url !== lastUrl) return;
     if (xhr.status === 200) {
-      processJpeg(arrayBufferToBytes(xhr.response), 0);
+      processJpeg(arrayBufferToBytes(xhr.response), 0, url);
     } else {
-      lastUrl = null;
-      sendError('Download ' + xhr.status);
+      failImage('Download ' + xhr.status, url);
     }
   };
   xhr.onerror = function () {
-    lastUrl = null;
-    sendError('Download failed');
+    failImage('Download failed', url);
   };
   xhr.send();
+  return true;
 }
 
 function downloadPrefetch(url, trackUri) {
@@ -224,8 +241,10 @@ function downloadPrefetch(url, trackUri) {
   xhr.send();
 }
 
-function sendImageToWatch(data, width, height, slot) {
+function sendImageToWatch(data, width, height, slot, url) {
   slot = slot || 0;
+  if (url === undefined) url = lastUrl;
+  if (slot === 0 && url !== lastUrl) return;
   if (slot === 1) prefetchInProgress = true;
   else transferInProgress = true;
 
@@ -241,14 +260,12 @@ function sendImageToWatch(data, width, height, slot) {
   if (slot === 1) headerMsg['ImageSlot'] = 1;
 
   Pebble.sendAppMessage(headerMsg, function () {
-    sendChunk(data, 0, totalChunks, chunkSize, slot);
+    sendChunk(data, 0, totalChunks, chunkSize, slot, url);
   }, function () {
     if (slot === 1) {
       resetPrefetch();
     } else {
-      transferInProgress = false;
-      lastUrl = null;
-      sendError('Header fail');
+      failImageSend('Header fail', url);
     }
   });
 }
@@ -263,17 +280,16 @@ function finishChunkRun(slot) {
   }
 }
 
-function failChunkRun(slot) {
+function failChunkRun(slot, url) {
   if (slot === 1) {
     resetPrefetch();
   } else {
-    transferInProgress = false;
-    lastUrl = null;
-    sendError('Chunk fail');
+    failImageSend('Chunk fail', url);
   }
 }
 
-function sendChunk(data, index, totalChunks, chunkSize, slot) {
+function sendChunk(data, index, totalChunks, chunkSize, slot, url) {
+  if (slot === 0 && url !== lastUrl) { finishChunkRun(slot); return; }
   if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
 
   var start = index * chunkSize;
@@ -286,17 +302,18 @@ function sendChunk(data, index, totalChunks, chunkSize, slot) {
 
   Pebble.sendAppMessage(msg, function () {
     if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
-    if (index + 1 < totalChunks) sendChunk(data, index + 1, totalChunks, chunkSize, slot);
+    if (index + 1 < totalChunks) sendChunk(data, index + 1, totalChunks, chunkSize, slot, url);
     else finishChunkRun(slot);
   }, function () {
     setTimeout(function () {
+      if (slot === 0 && url !== lastUrl) { finishChunkRun(slot); return; }
       if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
       Pebble.sendAppMessage(msg, function () {
         if (slot === 1 && prefetchAbort) { resetPrefetch(); return; }
-        if (index + 1 < totalChunks) sendChunk(data, index + 1, totalChunks, chunkSize, slot);
+        if (index + 1 < totalChunks) sendChunk(data, index + 1, totalChunks, chunkSize, slot, url);
         else finishChunkRun(slot);
       }, function () {
-        failChunkRun(slot);
+        failChunkRun(slot, url);
       });
     }, 500);
   });
@@ -313,15 +330,15 @@ function dropPrefetch() {
 function promotePrefetch() {
   if (!prefetchReady) return false;
   var promotedUrl = prefetchUrl;
+  failedUrl = null;
   Pebble.sendAppMessage({ 'ImagePromote': 1 }, function () {
     lastUrl = promotedUrl;
     resetPrefetch();
   }, function () {
     // Promote failed in transit — fall back to a fresh transfer.
-    var url = prefetchUrl;
     resetPrefetch();
-    lastUrl = null;
-    if (url) downloadAndSend(url);
+    if (!transferInProgress && lastUrl === promotedUrl) lastUrl = null;
+    if (!downloadAndSend(promotedUrl)) failedUrl = promotedUrl;
   });
   return true;
 }
@@ -337,5 +354,6 @@ module.exports = {
   promotePrefetch: promotePrefetch,
   getPrefetchedUri: getPrefetchedUri,
   prefetchSupported: prefetchSupported,
+  getFailedUrl: function () { return failedUrl; },
   isTransferring: function () { return transferInProgress; }
 };

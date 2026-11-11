@@ -87,37 +87,39 @@ function refreshAccessToken(callback) {
              '&refresh_token=' + encodeURIComponent(refreshToken) +
              '&client_id=' + encodeURIComponent(clientId);
 
-  xhr.onload = function() {
+  function finishRefresh(err, token) {
     refreshInProgress = false;
-    var queued = refreshQueue.slice();
+    var queued = [callback].concat(refreshQueue);
     refreshQueue = [];
+    // Isolate callers so one exception cannot strand the remaining callbacks.
+    for (var i = 0; i < queued.length; i++) {
+      try {
+        if (queued[i]) queued[i](err, token);
+      } catch (e) {
+        console.log('[playback] Refresh callback failed');
+      }
+    }
+  }
 
+  xhr.onload = function() {
+    var data = null;
     if (xhr.status === 200) {
-      var data = JSON.parse(xhr.responseText);
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch (e) {}
+    }
+    if (data && typeof data.access_token === 'string' && data.access_token.trim().length > 0) {
       saveToken(data.access_token, data.expires_in, clientId, data.refresh_token);
       console.log('[playback] Token refreshed successfully');
-      if (callback) callback(null, data.access_token);
-      for (var i = 0; i < queued.length; i++) {
-        if (queued[i]) queued[i](null, data.access_token);
-      }
+      finishRefresh(null, data.access_token);
     } else {
-      console.log('[playback] Refresh failed: ' + xhr.status + ' ' + xhr.responseText);
-      var err = new Error('Refresh failed');
-      if (callback) callback(err, null);
-      for (var i = 0; i < queued.length; i++) {
-        if (queued[i]) queued[i](err, null);
-      }
+      console.log('[playback] Refresh failed: ' + xhr.status +
+                  (xhr.status === 200 ? '' : ' ' + xhr.responseText));
+      finishRefresh(new Error('Refresh failed'), null);
     }
   };
   xhr.onerror = function() {
-    refreshInProgress = false;
-    var queued = refreshQueue.slice();
-    refreshQueue = [];
-    var err = new Error('Network error');
-    if (callback) callback(err, null);
-    for (var i = 0; i < queued.length; i++) {
-      if (queued[i]) queued[i](err, null);
-    }
+    finishRefresh(new Error('Network error'), null);
   };
   xhr.send(body);
 }

@@ -6,6 +6,10 @@ var pollTimer = null;
 var POLL_INTERVAL = 5000;
 var currentVolume = 50;
 var lastImageUrl = null;
+var imageAttemptUrl = null;
+var imageAttemptTrackUri = null;
+var imageAttempts = 0;
+var MAX_IMAGE_ATTEMPTS = 3;
 var listSendInProgress = false;
 var lastFetchedItems = [];
 var lastFetchedListType = -1;
@@ -95,14 +99,24 @@ function fetchNowPlaying() {
 
     if (artImages && artImages.length > 0) {
       var imageUrl = pickImageUrl(artImages, getTargetArtSize());
-      if (imageUrl && imageUrl !== lastImageUrl) {
+      var trackUri = track.uri || null;
+      if (imageUrl !== imageAttemptUrl || trackUri !== imageAttemptTrackUri) {
+        imageAttemptUrl = imageUrl;
+        imageAttemptTrackUri = trackUri;
+        imageAttempts = 0;
+      }
+      // Retry failed slot-0 art on later polls, with a fixed budget per track and URL.
+      if (imageUrl && imageAttempts < MAX_IMAGE_ATTEMPTS && !imageTransfer.isTransferring() &&
+          (imageUrl !== lastImageUrl || imageTransfer.getFailedUrl() === imageUrl)) {
         // Fast path: if a prefetched art matches the new track, swap it in
         // with a single ImagePromote message instead of a full transfer.
         if (track.uri && track.uri === imageTransfer.getPrefetchedUri()) {
           lastImageUrl = imageUrl;
+          imageAttempts++;
           imageTransfer.promotePrefetch();
-        } else if (!imageTransfer.isTransferring()) {
+        } else {
           lastImageUrl = imageUrl;
+          imageAttempts++;
           // Slot-0 transfer will free C-side prefetch buffers in
           // handle_image_header; mirror that here so getPrefetchedUri()
           // doesn't return a URI whose bitmap no longer exists.
