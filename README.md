@@ -24,6 +24,8 @@ Control Spotify from your Pebble smartwatch. Browse playlists, artists, albums a
 | Chalk | Pebble Time Round |
 | Diorite | Pebble 2 |
 | Emery | Pebble Time 2 |
+| Flint | Pebble 2 Duo |
+| Gabbro | Pebble Round 2 |
 | Aplite | Original Pebble (96×96 dithered album art) |
 
 ## Setup
