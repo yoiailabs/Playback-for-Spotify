@@ -1,4 +1,5 @@
 #include "comm.h"
+#include "outbox_queue.h"
 
 static CommCallbacks s_callbacks;
 
@@ -23,14 +24,14 @@ static uint16_t s_next_received_chunks = 0;
 static uint32_t s_next_bytes_received = 0;
 #endif
 
-// JS ready handshake
-static bool s_js_ready = false;
-static bool s_has_queued_command = false;
-static AppCommand s_queued_cmd;
+// JS ready handshake and serialized outbox state.
+static OutboxQueue s_outbox;
+static AppTimer *s_outbox_retry_timer;
 static char s_queued_context[128];
 
 static char s_status_buf[64];
 
+static void flush_outbox(void);
 static void send_command_msg(AppCommand cmd, const char *context);
 
 #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
@@ -40,22 +41,22 @@ static void send_command_msg(AppCommand cmd, const char *context);
 // the app dropped the dict), causing fast-path promotes to no-op forever
 // and leaving the screen stuck on the previously-displayed track.
 static void send_prefetch_abort(void) {
-  DictionaryIterator *out;
-  if (app_message_outbox_begin(&out) == APP_MSG_OK) {
-    dict_write_uint8(out, MESSAGE_KEY_PrefetchAbort, 1);
-    app_message_outbox_send();
-  }
+  s_outbox.prefetch_abort = true;
+  flush_outbox();
 }
 #endif
 
 static void handle_js_ready(void) {
-  s_js_ready = true;
+#if defined(PBL_PLATFORM_APLITE)
+  outbox_queue_ready(&s_outbox, false);
+#else
+  outbox_queue_ready(&s_outbox, true);
+#endif
   APP_LOG(APP_LOG_LEVEL_INFO, "JS ready received");
   if (s_callbacks.on_status) s_callbacks.on_status("Phone connected");
 
-  if (s_has_queued_command) {
-    s_has_queued_command = false;
-    send_command_msg(s_queued_cmd, s_queued_context[0] ? s_queued_context : NULL);
+  if (s_outbox.has_command) {
+    flush_outbox();
   }
 }
 
@@ -389,9 +390,23 @@ static void handle_auth_status(DictionaryIterator *iter) {
 }
 
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
-  // JS ready signal
-  if (dict_find(iter, MESSAGE_KEY_JsReady)) {
-    handle_js_ready();
+  // Settings and auth may share the startup dictionary with JsReady.
+  Tuple *mode = dict_find(iter, MESSAGE_KEY_LongPressMode);
+  bool handled = mode != NULL;
+  if (mode && long_press_mode_tuple_valid(mode->type, mode->length,
+      mode->length == 4 ? mode->value->int32 : 0)) {
+    long_press_mode_set(mode->value->int32);
+  }
+  bool js_ready = dict_find(iter, MESSAGE_KEY_JsReady) != NULL;
+  if (js_ready) handle_js_ready();
+  if (dict_find(iter, MESSAGE_KEY_AuthStatus)) {
+    handle_auth_status(iter);
+    handled = true;
+  }
+  if (js_ready) {
+    // Auth may already have queued a playback command. Piggyback the report
+    // there, or send it alone after any active outbox dictionary completes.
+    flush_outbox();
     return;
   }
 
@@ -425,12 +440,6 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     return;
   }
 
-  // Auth status
-  if (dict_find(iter, MESSAGE_KEY_AuthStatus)) {
-    handle_auth_status(iter);
-    return;
-  }
-
   // Image header
   if (dict_find(iter, MESSAGE_KEY_ImageWidth)) {
     handle_image_header(iter);
@@ -451,6 +460,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     return;
   }
 
+  if (handled) return;
   APP_LOG(APP_LOG_LEVEL_WARNING, "Unknown message received");
 }
 
@@ -461,14 +471,18 @@ static void inbox_dropped_handler(AppMessageResult reason, void *context) {
 }
 
 static void outbox_sent_handler(DictionaryIterator *iter, void *context) {
+  outbox_queue_completed(&s_outbox);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Outbox sent OK");
+  flush_outbox();
 }
 
 static void outbox_failed_handler(DictionaryIterator *iter,
                                    AppMessageResult reason, void *context) {
+  outbox_queue_completed(&s_outbox);
   APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox failed: %d", reason);
   snprintf(s_status_buf, sizeof(s_status_buf), "Send failed: %d", reason);
   if (s_callbacks.on_status) s_callbacks.on_status(s_status_buf);
+  flush_outbox();
 }
 
 void comm_init(CommCallbacks callbacks) {
@@ -482,6 +496,7 @@ void comm_init(CommCallbacks callbacks) {
 #if defined(PBL_PLATFORM_APLITE)
   // Aplite has only 24 KB total app slot. Image chunks are 1000 B,
   // so a tight inbox is enough; outbox only carries small command messages.
+  // Startup settings/auth/ready use only 34 B (three int32 tuples).
   uint32_t inbox = 1200;
   uint32_t outbox = 256;
 #elif defined(PBL_PLATFORM_CHALK)
@@ -541,6 +556,11 @@ void comm_drop_prefetch(void) {
 }
 
 void comm_deinit(void) {
+  if (s_outbox_retry_timer) {
+    app_timer_cancel(s_outbox_retry_timer);
+    s_outbox_retry_timer = NULL;
+  }
+  outbox_queue_retry_due(&s_outbox);
   app_message_deregister_callbacks();
   if (s_art_pending) {
     gbitmap_destroy(s_art_pending);
@@ -557,46 +577,74 @@ void comm_deinit(void) {
   comm_drop_prefetch();
 }
 
-static void send_command_msg(AppCommand cmd, const char *context) {
+static void outbox_retry_cb(void *context) {
+  s_outbox_retry_timer = NULL;
+  outbox_queue_retry_due(&s_outbox);
+  flush_outbox();
+}
+
+static void schedule_outbox_retry(void) {
+  if (!outbox_queue_retry_needed(&s_outbox)) return;
+  s_outbox_retry_timer = app_timer_register(500, outbox_retry_cb, NULL);
+  if (!s_outbox_retry_timer) outbox_queue_retry_due(&s_outbox);
+}
+
+// Commands, the one-time settings report and prefetch aborts share one
+// outbox. Keep the existing single pending-command slot; drain it on ACK/NACK.
+static void flush_outbox(void) {
+  if (!outbox_queue_should_send(&s_outbox)) return;
+
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
-
   if (result != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox begin failed: %d", result);
+    schedule_outbox_retry();
     return;
   }
-
-  dict_write_int32(iter, MESSAGE_KEY_Command, (int32_t)cmd);
-  if (context) {
-    dict_write_cstring(iter, MESSAGE_KEY_CommandContext, context);
+  if (s_outbox.has_command) {
+    dict_write_int32(iter, MESSAGE_KEY_Command, (int32_t)s_outbox.command);
+    if (s_queued_context[0]) {
+      dict_write_cstring(iter, MESSAGE_KEY_CommandContext, s_queued_context);
+    }
   }
-
+#if !defined(PBL_PLATFORM_APLITE)
+  if (s_outbox.mode_report) {
+    dict_write_int32(iter, MESSAGE_KEY_LongPressMode, (int32_t)long_press_mode_get());
+  }
+#endif
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+  if (s_outbox.prefetch_abort) dict_write_uint8(iter, MESSAGE_KEY_PrefetchAbort, 1);
+#endif
   result = app_message_outbox_send();
   if (result != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox send failed: %d", result);
+    schedule_outbox_retry();
+    return;
   }
+  outbox_queue_sent(&s_outbox);
+}
+
+static void send_command_msg(AppCommand cmd, const char *context) {
+  outbox_queue_command(&s_outbox, cmd);
+  if (context) {
+    strncpy(s_queued_context, context, sizeof(s_queued_context) - 1);
+    s_queued_context[sizeof(s_queued_context) - 1] = '\0';
+  } else {
+    s_queued_context[0] = '\0';
+  }
+  flush_outbox();
 }
 
 void comm_send_command(AppCommand cmd, const char *context) {
-  if (!s_js_ready) {
-    s_queued_cmd = cmd;
-    if (context) {
-      strncpy(s_queued_context, context, sizeof(s_queued_context) - 1);
-      s_queued_context[sizeof(s_queued_context) - 1] = '\0';
-    } else {
-      s_queued_context[0] = '\0';
-    }
-    s_has_queued_command = true;
+  send_command_msg(cmd, context);
+  if (!s_outbox.ready) {
     APP_LOG(APP_LOG_LEVEL_INFO, "JS not ready, queuing command %d", cmd);
     if (s_callbacks.on_status) s_callbacks.on_status("Waiting for phone...");
-    return;
   }
-
-  send_command_msg(cmd, context);
 }
 
 bool comm_is_js_ready(void) {
-  return s_js_ready;
+  return s_outbox.ready;
 }
 
 GBitmap *comm_get_cached_art(void) {

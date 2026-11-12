@@ -20,7 +20,7 @@ unavailable on Aplite.
 
 - **Now Playing** — track title, artist, album art, and progress bar
 - **Playback controls** — play/pause, next/previous track
-- **Volume control** — choose Volume in About → Long press UP/DOWN, then hold UP/DOWN on Now Playing (unavailable on Aplite; currently only while playing on external speakers)
+- **Volume control** — choose Volume in the phone settings page, then hold UP/DOWN on Now Playing (unavailable on Aplite; currently only while playing on external speakers)
 - **Browse library** — playlists, artists, albums, liked songs
 - **Queue control** — long-press a song to add it to your queue; preview the queue anytime
 - **Shuffle & repeat** — hold SELECT on the main menu's Now Playing row to open shuffle and repeat settings (off / context / track; unavailable on Aplite)
@@ -43,17 +43,19 @@ unavailable on Aplite.
 
 ### 1. Configuration Page
 
-Ongaku for Spotify uses the existing [configuration page](https://alex523ap.github.io/playback_config/)
-for Spotify OAuth login with Authorization Code + PKCE. No new hosting is required.
-The hosted page still says "Playback"; the updated names in this repository's
-`config/` files do not change that external page.
+Open the [configuration page](https://ongaku.yoiailabs.com/) from the Pebble
+phone app to save settings or log in with Spotify using Authorization Code + PKCE.
+No client secret is needed. The page and OAuth callback are hosted from `web/`.
 
 ### 2. Create a Spotify App
 
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create a new app
-3. Set Redirect URI to exactly `https://alex523ap.github.io/playback_config/`
+3. Set Redirect URI to exactly `https://ongaku.yoiailabs.com/oauth/callback`
 4. Copy your **Client ID**
+
+If you used the previous configuration page, add the new Redirect URI above
+to your existing app in the Spotify Developer Dashboard before logging in again.
 
 ### 3. Install the App
 
@@ -74,7 +76,7 @@ On the **Now Playing screen**:
 | Seek back / forward 15 seconds (Skip 15s mode) | Hold UP / DOWN for 700 ms |
 | Volume up / down (Volume mode) | Hold UP / DOWN for 700 ms |
 
-Choose the long-press mode in **About → Long press UP/DOWN**. The default is
+Choose **Long press UP/DOWN** in the **phone settings page**. The default is
 **Skip 15s**, and the choice is saved across launches. Aplite has neither these
 UP/DOWN long-press actions nor the mode setting.
 
@@ -98,6 +100,21 @@ pebble build
 pebble install --emulator basalt   # emulator
 pebble install --phone IP_ADDRESS  # real watch
 ```
+
+## Hosting the config page
+
+The `web/` directory contains plain HTML, CSS, and JavaScript, with no build step.
+Cloudflare serves `web/public/` as static assets; there is no Worker script.
+The Worker name `ongaku` intentionally replaces the existing Worker of that name.
+
+```sh
+npm run web:check   # Validate and package without Cloudflare credentials
+npm run web:deploy  # Deploy to ongaku.yoiailabs.com
+```
+
+Deployment requires `wrangler login` with access to the intended account.
+Set `CLOUDFLARE_ACCOUNT_ID` to select the account, or pick it when logging in.
+CI only runs the dry run; deployment is manual.
 
 ## Testing on Emulator
 

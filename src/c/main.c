@@ -27,22 +27,24 @@ static char s_current_artist[32] = "";
 bool main_get_shuffle(void) { return s_shuffle; }
 int  main_get_repeat(void)  { return s_repeat_state; }
 
-// --- Long-press mode (persisted; user-selectable in About) ---
+// --- Long-press mode (persisted; synced from phone settings) ---
 // Tutorial uses key 42; pick 43 to avoid collision.
 #define LONG_PRESS_PERSIST_KEY 43
 
 static LongPressMode s_long_press_mode = LP_MODE_SEEK;
 
 static void long_press_mode_load(void) {
-  s_long_press_mode = (LongPressMode)persist_read_int(LONG_PRESS_PERSIST_KEY);
+  int value = persist_read_int(LONG_PRESS_PERSIST_KEY);
+  s_long_press_mode = long_press_mode_valid(value) ? (LongPressMode)value : LP_MODE_SEEK;
 }
 
 LongPressMode long_press_mode_get(void) {
   return s_long_press_mode;
 }
 
-void long_press_mode_toggle(void) {
-  s_long_press_mode = (s_long_press_mode == LP_MODE_SEEK) ? LP_MODE_VOLUME : LP_MODE_SEEK;
+void long_press_mode_set(int value) {
+  if (!long_press_mode_valid(value) || s_long_press_mode == (LongPressMode)value) return;
+  s_long_press_mode = (LongPressMode)value;
   persist_write_int(LONG_PRESS_PERSIST_KEY, (int)s_long_press_mode);
 }
 

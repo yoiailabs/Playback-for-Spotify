@@ -59,7 +59,7 @@ static const char *s_bodies[] = {
   "Hold UP = back 15s\n"
   "Hold DOWN = +15s\n\n"
   "Switch to volume\n"
-  "in About menu.",
+  "in phone settings.",
 
   "Hold SELECT on\n"
   "'Now Playing' to\n"

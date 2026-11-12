@@ -175,3 +175,61 @@ test('non-200 refresh failure preserves status and body logging', () => {
   h.requests[0].respond(400, '{"error":"invalid_grant"}');
   assert.ok(logs.includes('[playback] Refresh failed: 400 {"error":"invalid_grant"}'));
 });
+
+test('configuration URL includes mode, platform, authentication and cache busting', () => {
+  const { h, auth } = setup({
+    spotify_client_id: 'test client+id', spotify_token: 'token',
+    ongaku_settings: JSON.stringify({ longPressMode: 'volume' })
+  });
+  auth.init();
+  h.listeners.showConfiguration();
+  const url = new URL(h.Pebble.openedURL);
+  assert.equal(url.origin + url.pathname, 'https://ongaku.yoiailabs.com/');
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    long_press: 'volume', platform: 'basalt', authed: '1', t: '1000000', client_id: 'test client+id'
+  });
+});
+for (const watchInfo of [undefined, () => { throw new Error('unavailable'); }]) {
+  test(`config opens even with unavailable watch info: ${typeof watchInfo}`, () => {
+    const { h, auth } = setup();
+    h.Pebble.getActiveWatchInfo = watchInfo;
+    auth.init();
+    assert.doesNotThrow(() => h.listeners.showConfiguration());
+    const url = new URL(h.Pebble.openedURL);
+    assert.equal(url.searchParams.get('platform'), '');
+    assert.equal(url.searchParams.has('long_press'), false);
+    assert.equal(url.searchParams.get('authed'), '0');
+    assert.equal(url.searchParams.has('client_id'), false);
+  });
+}
+test('settings-only response saves and sends integer mode while preserving all token state', () => {
+  const initial = { ...credentials, spotify_token: 'token', spotify_token_expiry: '123456' };
+  const { h, auth } = setup(initial);
+  let calls = 0;
+  auth.init(() => { calls++; });
+  for (const [mode, wire] of [['volume', 1], ['seek', 0]]) {
+    h.listeners.webviewclosed({ response: encodeURIComponent(JSON.stringify({ settings: { longPressMode: mode } })) });
+    assert.deepEqual(JSON.parse(h.localStorage.getItem('ongaku_settings')), { longPressMode: mode });
+    assert.equal(h.messages.at(-1).body.LongPressMode, wire);
+  }
+  for (const [key, value] of Object.entries(initial)) assert.equal(h.localStorage.getItem(key), value);
+  assert.equal(calls, 0);
+});
+test('invalid/cancelled config data cannot overwrite settings or create token state', () => {
+  const initial = { ongaku_settings: JSON.stringify({ longPressMode: 'volume' }) };
+  const { h, auth } = setup(initial);
+  let calls = 0;
+  auth.init(() => { calls++; });
+  const values = [null, true, 3, [], {}, { token: {} }, { token: 123 }, { token: '  ' },
+    { settings: null }, { settings: [] }, { settings: {} }, { settings: { longPressMode: 1 } },
+    { settings: { longPressMode: 'bad' } }];
+  for (const value of values) {
+    h.listeners.webviewclosed({ response: encodeURIComponent(JSON.stringify(value)) });
+  }
+  for (const response of ['', '%', '{']) h.listeners.webviewclosed({ response });
+  h.listeners.webviewclosed();
+  assert.equal(h.localStorage.getItem('ongaku_settings'), initial.ongaku_settings);
+  assert.equal(auth.getToken(), null);
+  assert.equal(h.messages.length, 0);
+  assert.equal(calls, 0);
+});

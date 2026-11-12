@@ -1,4 +1,5 @@
 var auth = require('./spotify_auth');
+var settings = require('./settings');
 var api = require('./spotify_api');
 var imageTransfer = require('./image_transfer');
 
@@ -56,9 +57,57 @@ function sendError(msg) {
   } catch (e) { /* best effort */ }
 }
 
-function sendAuthStatus() {
-  var authed = auth.isAuthenticated() ? 1 : 0;
-  Pebble.sendAppMessage({ 'AuthStatus': authed }, null, null);
+// Coalesce updates and retry a failed settings send twice (1 s, then 3 s).
+// The latest saved value is read for each attempt, after busy transfers finish.
+var settingsTimer = null;
+var pendingSettings = null;
+var settingsInFlight = false;
+var settingsRevision = 0;
+var settingsRetries = 0;
+
+function mergeSettingsExtra(target, extra) {
+  for (var key in extra) {
+    if (Object.prototype.hasOwnProperty.call(extra, key)) target[key] = extra[key];
+  }
+  return target;
+}
+
+function scheduleSettings(delay) {
+  if (settingsTimer === null) settingsTimer = setTimeout(flushSettings, delay);
+}
+
+function sendSettings(extra, immediately) {
+  pendingSettings = mergeSettingsExtra(pendingSettings || {}, extra);
+  settingsRevision++;
+  settingsRetries = 0;
+  if (immediately && settingsTimer === null) flushSettings();
+  else scheduleSettings(0);
+}
+
+function flushSettings() {
+  settingsTimer = null;
+  if (!pendingSettings) return;
+  if (settingsInFlight || listSendInProgress || imageTransfer.isBusy()) {
+    scheduleSettings(250);
+    return;
+  }
+  var extra = pendingSettings;
+  var revision = settingsRevision;
+  pendingSettings = null;
+  settingsInFlight = true;
+  settings.send(extra, function() {
+    settingsInFlight = false;
+    if (pendingSettings) scheduleSettings(0);
+  }, function() {
+    settingsInFlight = false;
+    if (revision === settingsRevision && settingsRetries >= 2) return;
+    if (revision === settingsRevision) settingsRetries++;
+    // Retain readiness/auth fields, but let a newer update override them.
+    pendingSettings = mergeSettingsExtra(extra, pendingSettings);
+    if (settingsTimer !== null) clearTimeout(settingsTimer);
+    settingsTimer = null;
+    scheduleSettings(settingsRetries === 2 ? 3000 : 1000);
+  }, imageTransfer.sendControlMessage);
 }
 
 // --- Now Playing ---
@@ -111,9 +160,10 @@ function fetchNowPlaying() {
         // Fast path: if a prefetched art matches the new track, swap it in
         // with a single ImagePromote message instead of a full transfer.
         if (track.uri && track.uri === imageTransfer.getPrefetchedUri()) {
-          lastImageUrl = imageUrl;
-          imageAttempts++;
-          imageTransfer.promotePrefetch();
+          if (imageTransfer.promotePrefetch()) {
+            lastImageUrl = imageUrl;
+            imageAttempts++;
+          }
         } else {
           lastImageUrl = imageUrl;
           imageAttempts++;
@@ -239,7 +289,7 @@ function fetchAndSendList(listType, apiFn, formatFn) {
   apiFn(function(err, data) {
     if (err) {
       sendError(err.message);
-      if (err.message === 'Token expired') sendAuthStatus();
+      if (err.message === 'Token expired') sendSettings({ 'AuthStatus': auth.isAuthenticated() ? 1 : 0 });
       return;
     }
     if (!data) {
@@ -555,14 +605,13 @@ function handleCommand(cmd, context) {
 }
 
 auth.init(function(authed) {
-  sendAuthStatus();
+  sendSettings({ 'AuthStatus': authed ? 1 : 0 });
   if (authed) startPolling();
   else stopPolling();
-});
+}, function() { sendSettings({}); });
 
 Pebble.addEventListener('ready', function() {
-  Pebble.sendAppMessage({ 'JsReady': 1 });
-  sendAuthStatus();
+  sendSettings({ 'JsReady': 1, 'AuthStatus': auth.isAuthenticated() ? 1 : 0 }, true);
   if (auth.isAuthenticated()) {
     startPolling();
     setTimeout(fetchNowPlaying, 1000);
@@ -570,6 +619,9 @@ Pebble.addEventListener('ready', function() {
 });
 
 Pebble.addEventListener('appmessage', function(e) {
+  var mode = e.payload['LongPressMode'];
+  if (mode === undefined) mode = e.payload[160];
+  settings.adoptWatch(mode);
   var cmd = e.payload['Command'] || e.payload[100];
   var ctx = e.payload['CommandContext'] || e.payload[101];
   if (cmd !== undefined && cmd !== null) handleCommand(cmd, ctx);

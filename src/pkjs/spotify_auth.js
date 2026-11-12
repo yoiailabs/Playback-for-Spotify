@@ -1,7 +1,7 @@
 // Spotify OAuth - Authorization Code with PKCE via Pebble config page
 
 var SPOTIFY_CLIENT_ID = '0b9be8bdf4ae48d29bde7e52220d5b5e';
-var SPOTIFY_REDIRECT_URI = 'https://alex523ap.github.io/playback_config/';
+var settings = require('./settings');
 
 var TOKEN_KEY = 'spotify_token';
 var EXPIRY_KEY = 'spotify_token_expiry';
@@ -134,15 +134,9 @@ function isAuthenticated() {
   return !!getToken();
 }
 
-function init(onAuthChange) {
+function init(onAuthChange, onSettingsChange) {
   Pebble.addEventListener('showConfiguration', function() {
-    var savedClientId = localStorage.getItem(CLIENT_ID_KEY) || '';
-    var configUrl = SPOTIFY_REDIRECT_URI + '?t=' + Date.now();
-    if (savedClientId) {
-      configUrl += '&client_id=' + encodeURIComponent(savedClientId);
-    }
-    console.log('[playback] Opening config page: ' + configUrl);
-    Pebble.openURL(configUrl);
+    Pebble.openURL(settings.configUrl(localStorage.getItem(CLIENT_ID_KEY), isAuthenticated()));
   });
 
   Pebble.addEventListener('webviewclosed', function(e) {
@@ -150,14 +144,22 @@ function init(onAuthChange) {
       try {
         var decoded = decodeURIComponent(e.response);
         var data = JSON.parse(decoded);
-        if (data.token) {
-          var expiresIn = data.expiresIn || 3600;
-          saveToken(data.token, expiresIn, data.clientId, data.refreshToken);
-          console.log('[playback] Token and Refresh Token saved');
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+        var hasToken = typeof data.token === 'string' && data.token.trim().length > 0;
+        var savedSettings = data.settings && settings.save(data.settings);
+        if (hasToken) {
+          var expiresIn = typeof data.expiresIn === 'number' && isFinite(data.expiresIn) && data.expiresIn > 0 ? data.expiresIn : 3600;
+          saveToken(data.token, expiresIn,
+            typeof data.clientId === 'string' ? data.clientId : null,
+            typeof data.refreshToken === 'string' ? data.refreshToken : null);
           if (onAuthChange) onAuthChange(true);
         }
+        if (savedSettings) {
+          if (onSettingsChange) onSettingsChange();
+          else settings.send({});
+        }
       } catch (ex) {
-        console.log('[playback] Config parse error: ' + ex.message);
+        console.log('[playback] Invalid config response');
       }
     }
   });

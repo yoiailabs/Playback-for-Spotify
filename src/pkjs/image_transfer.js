@@ -19,6 +19,8 @@ var prefetchAbort = false;
 var prefetchUrl = null;
 var prefetchTrackUri = null;
 var prefetchReady = false;
+var promotionInProgress = false;
+var controlInProgress = false;
 
 function isColorPlatform() {
   try {
@@ -242,6 +244,12 @@ function downloadPrefetch(url, trackUri) {
 }
 
 function sendImageToWatch(data, width, height, slot, url) {
+  // A download may finish while settings are awaiting their ACK. Keep the
+  // decoded pixels until that small control message releases the outbox.
+  if (controlInProgress) {
+    setTimeout(function () { sendImageToWatch(data, width, height, slot, url); }, 100);
+    return;
+  }
   slot = slot || 0;
   if (url === undefined) url = lastUrl;
   if (slot === 0 && url !== lastUrl) return;
@@ -328,13 +336,16 @@ function dropPrefetch() {
 }
 
 function promotePrefetch() {
-  if (!prefetchReady) return false;
+  if (!prefetchReady || controlInProgress) return false;
   var promotedUrl = prefetchUrl;
   failedUrl = null;
+  promotionInProgress = true;
   Pebble.sendAppMessage({ 'ImagePromote': 1 }, function () {
+    promotionInProgress = false;
     lastUrl = promotedUrl;
     resetPrefetch();
   }, function () {
+    promotionInProgress = false;
     // Promote failed in transit — fall back to a fresh transfer.
     resetPrefetch();
     if (!transferInProgress && lastUrl === promotedUrl) lastUrl = null;
@@ -347,7 +358,26 @@ function getPrefetchedUri() {
   return prefetchReady ? prefetchTrackUri : null;
 }
 
+// Call only when isBusy() is false. Reserve the outbox until ACK/NACK so
+// asynchronously completing image downloads cannot start a chunk chain.
+function sendControlMessage(body, ack, nack) {
+  controlInProgress = true;
+  try {
+    Pebble.sendAppMessage(body, function () {
+      controlInProgress = false;
+      if (ack) ack();
+    }, function () {
+      controlInProgress = false;
+      if (nack) nack();
+    });
+  } catch (error) {
+    controlInProgress = false;
+    if (nack) nack();
+  }
+}
+
 module.exports = {
+  sendControlMessage: sendControlMessage,
   sendImageFromUrl: downloadAndSend,
   sendPrefetchFromUrl: downloadPrefetch,
   dropPrefetch: dropPrefetch,
@@ -355,5 +385,6 @@ module.exports = {
   getPrefetchedUri: getPrefetchedUri,
   prefetchSupported: prefetchSupported,
   getFailedUrl: function () { return failedUrl; },
+  isBusy: function () { return transferInProgress || prefetchInProgress || promotionInProgress || controlInProgress; },
   isTransferring: function () { return transferInProgress; }
 };

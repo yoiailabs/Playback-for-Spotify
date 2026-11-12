@@ -58,6 +58,11 @@ function harness({ platform = 'basalt', initial = {}, now = 1000000 } = {}) {
         ...globals, module: { exports: {} },
         require(name) {
           if (Object.hasOwn(dependencies, name)) return dependencies[name];
+          if (name === './settings') {
+            const settingsContext = vm.createContext({ ...globals, module: { exports: {} } });
+            vm.runInContext(fs.readFileSync(path.join(root, 'src/pkjs/settings.js'), 'utf8'), settingsContext);
+            return settingsContext.module.exports;
+          }
           // Never read generated credentials or make real network requests.
           throw new Error('Unmocked dependency: ' + name);
         }

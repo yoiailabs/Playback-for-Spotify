@@ -1,5 +1,6 @@
 #pragma once
 #include <pebble.h>
+#include "settings.h"
 
 // Commands sent from watch to JS (via Command message key)
 typedef enum {
@@ -29,14 +30,9 @@ typedef enum {
 // Long-press behavior on Now Playing (UP/DOWN held).
 // In LP_MODE_SEEK:   UP = back 15s, DOWN = forward 15s.
 // In LP_MODE_VOLUME: UP = volume +,  DOWN = volume -.
-// Persisted across launches; user toggles in About menu.
-typedef enum {
-  LP_MODE_SEEK   = 0,
-  LP_MODE_VOLUME = 1
-} LongPressMode;
-
+// Persisted across launches; configured in the phone settings page.
 LongPressMode long_press_mode_get(void);
-void long_press_mode_toggle(void);
+void long_press_mode_set(int value);
 
 // List types
 typedef enum {
