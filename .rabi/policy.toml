@@ -1,0 +1,29 @@
+# First policy PR is a built-in floor; a maintainer must merge it by hand.
+# Public repository: keep this file free of personal or private information
+# other than the maintainer GitHub login required by rabi.
+#
+# Required checks confirmed 2026-11-15 against main `.github/workflows/checks.yml`
+# and merged PRs #13-#18. PR #19 (merged 2026-11-12) still has an empty check
+# rollup; confirm CI still runs on new PRs before relying on advance.
+
+schema = 1
+default-tier = "medium"
+
+[classifier]
+doc = "risk-tiers.md"
+
+[ci]
+app = "github-actions"
+required = [
+  "JavaScript lint and tests",
+  "C analysis and host tests",
+  "Build all seven watch platforms",
+]
+
+[merge]
+auto = ["low", "medium"]
+method = "squash"
+delete-branch = false
+
+[approval]
+approvers = ["aku11i"]
